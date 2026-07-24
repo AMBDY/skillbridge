@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Payment — SkillBridge</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav id="navbar"></nav>
+<main class="container" style="padding:32px 24px;max-width:760px">
+  <h1 class="section-title" id="paymentTitle">Choose Payment Method</h1>
+  <p class="section-sub" id="paymentSub">Funds are held in escrow until you confirm receipt of work.</p>
+  <div class="grid grid-2" style="margin:24px 0">
+    <a href="/pay-crypto.html" id="cryptoLink" class="eco-card"><div class="eco-icon">₿</div><h3>Crypto (USDT)</h3><p>Pay with USDT to a verified wallet.</p></a>
+    <a href="/pay-fiat.html" id="fiatLink" class="eco-card"><div class="eco-icon">₦</div><h3>Fiat (Naira)</h3><p>Pay via Paystack or bank transfer.</p></a>
+  </div>
+  <div class="warning-box" id="paymentWarning">⚠ Funds are held in escrow. The worker is paid only after you click "Received" and the superadmin confirms release. Service fee is deducted from the held amount.</div>
+</main>
+<footer id="footer"></footer>
+<script src="/js/app.js"></script>
+<script>
+  const qs = location.search.slice(1);
+  document.getElementById('cryptoLink').href = '/pay-crypto.html' + (qs ? '?' + qs : '');
+  document.getElementById('fiatLink').href = '/pay-fiat.html' + (qs ? '?' + qs : '');
+  if (new URLSearchParams(location.search).get('purpose') === 'ai_screening') {
+    document.getElementById('paymentTitle').textContent = 'Pay AI Screening Fee';
+    document.getElementById('paymentSub').textContent = 'This one-time fee activates AI screening for this job.';
+    document.getElementById('paymentWarning').textContent = '⚠ This fee is separate from escrow — it only unlocks AI screening for this job posting.';
+  }
+</script>
+</body>
+</html>

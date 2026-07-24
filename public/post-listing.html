@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Post a Listing — SkillBridge</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav id="navbar"></nav>
+<div class="auth-wrap" style="align-items:flex-start;padding-top:48px">
+  <div class="auth-card" style="max-width:640px">
+    <h1 class="auth-title">Post a Listing</h1>
+    <p class="auth-sub">Offer a service (Hire Talent) or sell a product (Shop Products).</p>
+
+    <div class="form-group">
+      <label class="form-label">Listing type</label>
+      <select class="form-select" id="listingType">
+        <option value="service">Service (Hire Talent)</option>
+        <option value="product">Product (Shop)</option>
+      </select>
+    </div>
+
+    <form id="listingForm">
+      <div class="form-group"><label class="form-label">Category</label><select class="form-select" id="catSel" required></select></div>
+      <div class="form-group"><label class="form-label">Title</label><input class="form-input" name="title" required></div>
+      <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" name="description" rows="4" required></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Price (₦)</label><input class="form-input" type="number" name="price" required></div>
+        <div class="form-group svc-only"><label class="form-label">Delivery time (days)</label><input class="form-input" type="number" name="delivery_days" value="3"></div>
+        <div class="form-group prod-only" style="display:none"><label class="form-label">Stock</label><input class="form-input" type="number" name="stock" value="1"></div>
+      </div>
+      <div class="form-row prod-only" style="display:none">
+        <div class="form-group"><label class="form-label">Size</label><input class="form-input" name="size"></div>
+        <div class="form-group"><label class="form-label">Color</label><input class="form-input" name="color"></div>
+        <div class="form-group"><label class="form-label">Gender</label>
+          <select class="form-select" name="gender"><option value="">N/A</option><option>Male</option><option>Female</option><option>Unisex</option></select>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Images</label>
+        <input class="form-input" type="file" id="imagesInput" accept="image/*" multiple required>
+        <div id="imagesPreview" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Video (optional)</label><input class="form-input" type="file" id="videoInput" accept="video/*"></div>
+      <button type="submit" class="btn btn-gold btn-block btn-lg">Publish Listing</button>
+    </form>
+  </div>
+</div>
+<footer id="footer"></footer>
+<script src="/js/sb-config.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/post-listing.js"></script>
+</body>
+</html>

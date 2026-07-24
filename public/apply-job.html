@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apply for Job — SkillBridge</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav id="navbar"></nav>
+<div class="auth-wrap" style="align-items:flex-start;padding-top:48px">
+  <div class="auth-card" style="max-width:640px">
+    <h1 class="auth-title" id="applyTitle">Apply for Job</h1>
+    <p class="auth-sub" id="applySub">Fill in your details to apply. The client will be notified immediately.</p>
+    <form id="applyForm">
+      <div class="form-group"><label class="form-label">Cover letter</label><textarea class="form-textarea" name="cover_letter" rows="5" placeholder="Tell the client why you're a great fit..." required></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Expected price (₦)</label><input class="form-input" type="number" name="expected_price" required></div>
+        <div class="form-group"><label class="form-label">Estimated duration</label><input class="form-input" name="duration" placeholder="e.g. 1 week"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Portfolio link (optional)</label><input class="form-input" name="portfolio_url" placeholder="https://... (e.g. Behance, personal site)"></div>
+      <div class="form-group"><label class="form-label">Resume/CV (optional)</label><input class="form-input" type="file" id="resumeInput" accept=".pdf,.doc,.docx"></div>
+      <button type="submit" class="btn btn-gold btn-block btn-lg">Submit Application</button>
+    </form>
+  </div>
+</div>
+<footer id="footer"></footer>
+<script src="/js/sb-config.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/apply-job.js"></script>
+</body>
+</html>

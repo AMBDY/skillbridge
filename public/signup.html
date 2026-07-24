@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sign Up — SkillBridge</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav id="navbar"></nav>
+<div class="auth-wrap">
+  <div class="auth-card">
+    <h1 class="auth-title">Create your account</h1>
+    <p class="auth-sub">Join Africa's trusted marketplace for talent, products, and jobs.</p>
+    <form id="signupForm">
+      <label class="form-label">Choose your role</label>
+      <div class="role-picker" id="rolePicker">
+        <div class="role-opt active" data-role="client"><span class="role-icon">👤</span>Client</div>
+        <div class="role-opt" data-role="freelancer"><span class="role-icon">🤝</span>Freelancer</div>
+        <div class="role-opt" data-role="seller"><span class="role-icon">🛍️</span>Seller</div>
+        <div class="role-opt" data-role="worker"><span class="role-icon">💼</span>Worker</div>
+      </div>
+
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">First Name</label><input class="form-input" name="first_name" required></div>
+        <div class="form-group"><label class="form-label">Middle Name</label><input class="form-input" name="middle_name"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Last Name</label><input class="form-input" name="last_name" required></div>
+        <div class="form-group"><label class="form-label">Display Name</label><input class="form-input" name="display_name" required></div>
+      </div>
+      <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" name="email" required></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Password</label><input class="form-input" type="password" name="password" required></div>
+        <div class="form-group"><label class="form-label">Confirm Password</label><input class="form-input" type="password" name="confirm" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Phone Number</label><input class="form-input" name="phone" required></div>
+        <div class="form-group"><label class="form-label">Country</label><input class="form-input" name="country" value="Nigeria" required></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">State</label><input class="form-input" name="state" required></div>
+        <div class="form-group"><label class="form-label">City</label><input class="form-input" name="city" required></div>
+      </div>
+      <div class="form-group"><label class="form-label">Address</label><input class="form-input" name="address"></div>
+
+      <h3 style="margin:20px 0 10px;font-size:1.2rem">Payment Details</h3>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Bank Name</label><input class="form-input" name="bank_name"></div>
+        <div class="form-group"><label class="form-label">Account Number</label><input class="form-input" name="account_number"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Account Holder Name</label><input class="form-input" name="account_holder_name"></div>
+
+      <h3 style="margin:20px 0 10px;font-size:1.2rem">KYC Verification</h3>
+      <p style="color:var(--text-soft);font-size:0.88rem;margin-bottom:12px">Upload a selfie holding a paper showing your full name and today's date. Verification levels: <span class="badge badge-kyc">L0 Unverified</span> → <span class="badge badge-kyc">L1 Phone</span> → <span class="badge badge-kyc">L2 ID</span> → <span class="badge badge-kyc">L3 KYC</span> → <span class="badge badge-elite">L4 Elite</span></p>
+      <div class="form-group">
+        <label class="form-label">KYC Selfie Photo</label>
+        <div style="border:2px dashed var(--border);border-radius:var(--radius);padding:24px;text-align:center;cursor:pointer" id="kycDropZone">
+          <div id="kycPlaceholder">
+            <div style="font-size:2rem;margin-bottom:8px">📷</div>
+            <p style="color:var(--text-soft);font-size:0.9rem">Click to upload or drag and drop</p>
+            <p style="color:var(--text-muted);font-size:0.8rem">PNG, JPG up to 5MB</p>
+          </div>
+          <img id="kycPreview" style="display:none;max-width:200px;border-radius:8px;margin:0 auto">
+          <input type="file" id="kycFileInput" accept="image/*" style="display:none">
+        </div>
+      </div>
+
+      <button type="submit" class="btn btn-gold btn-block btn-lg" id="signupBtn">Create Account</button>
+      <p style="text-align:center;margin-top:16px;color:var(--text-soft)">Already have an account? <a href="/signin.html" style="color:var(--gold)">Sign in</a></p>
+    </form>
+  </div>
+</div>
+<footer id="footer"></footer>
+<script src="/js/sb-config.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/signup.js"></script>
+</body>
+</html>

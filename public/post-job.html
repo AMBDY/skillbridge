@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Post a Job — SkillBridge</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav id="navbar"></nav>
+<div class="auth-wrap" style="align-items:flex-start;padding-top:48px">
+  <div class="auth-card" style="max-width:680px">
+    <h1 class="auth-title">Post a Job</h1>
+    <p class="auth-sub">Describe what you need. Admin approval is required before publishing.</p>
+    <form id="postJobForm">
+      <div class="form-group"><label class="form-label">Category</label><select class="form-select" name="category_id" id="catSel" required></select></div>
+      <div class="form-group"><label class="form-label">Title</label><input class="form-input" name="title" required></div>
+      <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" name="description" required></textarea></div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Budget (₦)</label><input class="form-input" type="number" name="budget" required></div>
+        <div class="form-group"><label class="form-label">Duration</label><select class="form-select" name="duration">
+          <option>3 days</option><option>5 days</option><option>1 week</option><option>2 weeks</option><option>1 month</option><option>Permanent</option><option>Other</option>
+        </select></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Price Min</label><input class="form-input" type="number" name="price_min"></div>
+        <div class="form-group"><label class="form-label">Price Max</label><input class="form-input" type="number" name="price_max"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Gender</label><input class="form-input" name="gender"></div>
+        <div class="form-group"><label class="form-label">Colors</label><input class="form-input" name="colors"></div>
+      </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Size</label><input class="form-input" name="size"></div>
+        <div class="form-group"><label class="form-label">State</label><input class="form-input" name="state"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Location</label><input class="form-input" name="location"></div>
+      <div class="form-group"><label class="form-label">Reference images</label>
+        <input class="form-input" type="file" id="refImagesInput" accept="image/*" multiple>
+        <div id="refImagesPreview" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+      <div class="form-group"><label class="form-label">Additional notes</label><textarea class="form-textarea" name="additional_notes"></textarea></div>
+      <button type="submit" class="btn btn-gold btn-block btn-lg">Submit for Approval</button>
+    </form>
+  </div>
+</div>
+<footer id="footer"></footer>
+<script src="/js/sb-config.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/post-job.js"></script>
+</body>
+</html>

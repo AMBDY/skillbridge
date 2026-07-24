@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Search — SkillBridge</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav id="navbar"></nav>
+<main class="container" style="padding:32px 24px">
+  <h1 class="section-title" id="searchTitle">Search</h1>
+  <div style="display:flex;gap:12px;flex-wrap:wrap;margin:24px 0">
+    <input class="form-input" id="searchInput" placeholder="Search..." style="flex:1;min-width:240px">
+    <select class="form-select" id="searchType" style="max-width:180px"><option value="services">Services</option><option value="products">Products</option><option value="jobs">Jobs</option></select>
+    <button class="btn btn-gold" id="searchBtn">Search</button>
+  </div>
+  <div id="results" class="grid grid-4"></div>
+</main>
+<footer id="footer"></footer>
+<script src="/js/app.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  const params = new URLSearchParams(location.search);
+  const q = params.get('q') || '';
+  document.getElementById('searchInput').value = q;
+  document.getElementById('searchTitle').textContent = q ? `Results for "${q}"` : 'Search';
+  if (q) doSearch();
+  document.getElementById('searchBtn').addEventListener('click', doSearch);
+  document.getElementById('searchInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') doSearch(); });
+  async function doSearch() {
+    const query = document.getElementById('searchInput').value.trim();
+    const type = document.getElementById('searchType').value;
+    if (!query) return;
+    const el = document.getElementById('results');
+    Skeleton.grid(8, el);
+    const items = await API.get(`/marketplace/${type}?search=${encodeURIComponent(query)}`).catch(() => []);
+    el.innerHTML = items.length ? items.map(item => {
+      const img = (item.images && item.images[0]) || 'https://images.pexels.com/photos/3184405/pexels-photo-3184405.jpeg';
+      const t = type === 'services' ? 'service' : 'product';
+      return `<div class="card"><div class="card-img"><img src="${img}"></div><div class="card-body"><div class="card-title">${item.title}</div><div class="card-price">${fmtPrice(item.price)}</div><a href="/listing.html?type=${t}&id=${item.id}" class="btn btn-outline btn-sm">View</a></div></div>`;
+    }).join('') : '<p style="grid-column:1/-1;color:var(--text-muted);text-align:center;padding:48px">No results found.</p>';
+  }
+});
+</script>
+</body>
+</html>

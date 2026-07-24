@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Hire Talent — SkillBridge</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav id="navbar"></nav>
+<main class="container" style="padding:32px 24px">
+  <span class="eyebrow">Hire Talent</span>
+  <h1 class="section-title">Find Verified African Freelancers</h1>
+  <p class="section-sub">Browse 11 service categories from graphics design to catering. Every freelancer is KYC-verified and payments are escrow-protected.</p>
+
+  <div class="adsense-slot" data-placement="category_between_listings" style="margin:16px 0"></div>
+  <div class="ad-slot" id="adSlotHire" style="margin:24px 0">Advertisement</div>
+
+  <div class="grid grid-5" id="catGrid" style="margin:32px 0"></div>
+
+  <div class="section-head" style="margin-top:32px">
+    <div><span class="eyebrow">Featured Services</span><h2 class="section-title" style="font-size:1.8rem">Top Services</h2></div>
+    <select class="form-select" id="sortSel" style="max-width:200px">
+      <option value="recommended">Recommended</option>
+      <option value="rating">Highest rated</option>
+      <option value="price_low">Lowest price</option>
+      <option value="price_high">Highest price</option>
+    </select>
+  </div>
+  <div class="grid grid-4" id="listings"></div>
+</main>
+<footer id="footer"></footer>
+<script src="/js/sb-config.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/marketplace.js"></script>
+<script>Marketplace.init('hire');</script>
+</body>
+</html>

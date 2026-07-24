@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Apply — SkillBridge Recruitment</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav id="navbar"></nav>
+<div class="auth-wrap" style="align-items:flex-start;padding-top:48px">
+  <div class="auth-card" style="max-width:640px">
+    <h1 class="auth-title" id="applyTitle">Apply for this role</h1>
+    <p class="auth-sub" id="applySub">Loading job details...</p>
+    <div id="questionsBox"></div>
+    <form id="recruitApplyForm">
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Full name</label><input class="form-input" name="full_name" required></div>
+        <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" name="email" required></div>
+      </div>
+      <div class="form-group"><label class="form-label">Phone</label><input class="form-input" name="phone"></div>
+      <div class="form-group"><label class="form-label">Cover note</label><textarea class="form-textarea" name="cover_note" rows="4" placeholder="Why are you a great fit for this role?"></textarea></div>
+      <div id="docsSection"></div>
+      <div id="videoSection" style="display:none">
+        <div class="form-group"><label class="form-label">Video response link <span id="videoRequiredNote"></span></label>
+          <input class="form-input" name="video_url" placeholder="https://... (upload elsewhere and paste the link)">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-gold btn-block btn-lg">Submit Application</button>
+    </form>
+  </div>
+</div>
+<footer id="footer"></footer>
+<script src="/js/sb-config.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/recruitment-apply.js"></script>
+</body>
+</html>

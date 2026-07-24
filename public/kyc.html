@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Identity Verification — SkillBridge</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav id="navbar"></nav>
+<div class="auth-wrap" style="align-items:flex-start;padding-top:48px">
+  <div class="auth-card" style="max-width:520px">
+    <h1 class="auth-title">Identity Verification</h1>
+    <p class="auth-sub">Take a selfie holding a paper showing your full name and today's date. This moves you from Level 0 (Unverified) toward Level 3 (KYC Verified).</p>
+    <div id="kycStatus" style="margin-bottom:16px"></div>
+    <form id="kycForm">
+      <div class="form-group"><label class="form-label">Full name (as it will appear on the paper)</label><input class="form-input" name="full_name" required></div>
+      <div class="form-group">
+        <label class="form-label">Selfie with paper</label>
+        <input class="form-input" type="file" id="selfieInput" accept="image/*" capture="user" required>
+        <div id="selfiePreview" style="margin-top:10px"></div>
+      </div>
+      <button type="submit" class="btn btn-gold btn-block btn-lg" id="kycSubmitBtn">Submit for Verification</button>
+    </form>
+  </div>
+</div>
+<footer id="footer"></footer>
+<script src="/js/sb-config.js"></script>
+<script src="/js/app.js"></script>
+<script src="/js/kyc.js"></script>
+</body>
+</html>

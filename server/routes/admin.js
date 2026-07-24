@@ -1,0 +1,569 @@
+const router = require('express').Router();
+const { supabase, createAuthedClient } = require('../utils/db');
+const { authMiddleware, adminOnly } = require('../middleware/auth');
+const { notify } = require('../utils/notify');
+const { sendEmail } = require('../utils/email');
+
+// All admin routes require auth + admin role
+router.use(authMiddleware, adminOnly);
+
+// Helper: get an authenticated client for the current user
+function authedClient(req) {
+  const token = req.headers.authorization?.replace('Bearer ', '');
+  return createAuthedClient(token);
+}
+
+async function profilesByIds(client, ids) {
+  if (!ids || !ids.length) return new Map();
+  const { data } = await client.from('profiles').select('user_id, display_name, email, profile_image, rating, kyc_level, subscription_tier, role').in('user_id', ids);
+  return new Map((data || []).map(p => [p.user_id, p]));
+}
+
+// Overview stats
+router.get('/overview', async (req, res) => {
+  const c = authedClient(req);
+  const [users, jobs, payments, disputes, kyc, subs] = await Promise.all([
+    c.from('profiles').select('id', { count: 'exact', head: true }),
+    c.from('jobs').select('id', { count: 'exact', head: true }),
+    c.from('payments').select('amount, service_fee, status'),
+    c.from('disputes').select('id, status', { count: 'exact', head: true }),
+    c.from('kyc_submissions').select('id', { count: 'exact', head: true }),
+    c.from('subscriptions').select('id', { count: 'exact', head: true })
+  ]);
+  const revenue = payments.data?.filter(p => p.status === 'released').reduce((s, p) => s + Number(p.service_fee || 0), 0) || 0;
+  res.json({ users: users.count || 0, jobs: jobs.count || 0, revenue, disputes: disputes.count || 0, kycPending: kyc.count || 0, subsPending: subs.count || 0 });
+});
+
+// Users
+router.get('/users', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('profiles').select('*').order('created_at', { ascending: false }).limit(100);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.put('/users/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('profiles').update(req.body).eq('user_id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// KYC review
+router.get('/kyc', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('kyc_submissions').select('*').eq('status', 'pending').order('created_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  const ids = (data || []).map(k => k.user_id).filter(Boolean);
+  const pmap = await profilesByIds(c, ids);
+  res.json((data || []).map(k => ({ ...k, user: pmap.get(k.user_id) || null })));
+});
+
+router.put('/kyc/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { status, reviewer_note } = req.body;
+  const { data: kyc } = await c.from('kyc_submissions').update({ status, reviewer_note }).eq('id', req.params.id).select().single();
+  if (kyc && status === 'approved') {
+    await c.from('profiles').update({ kyc_level: 3 }).eq('user_id', kyc.user_id);
+    await notify(c, { userId: kyc.user_id, type: 'kyc_approved', title: 'Identity verified', body: 'Your KYC verification was approved.', link: '/dashboard.html' });
+    const { data: userProfile } = await c.from('profiles').select('email, display_name').eq('user_id', kyc.user_id).maybeSingle();
+    if (userProfile?.email) sendEmail('kyc_approved', userProfile.email, { name: userProfile.display_name }).catch(() => {});
+  }
+  res.json(kyc);
+});
+
+// Job moderation
+router.get('/jobs', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('jobs').select('*').order('created_at', { ascending: false }).limit(100);
+  if (error) return res.status(400).json({ error: error.message });
+  const ids = (data || []).map(j => j.user_id).filter(Boolean);
+  const pmap = await profilesByIds(c, ids);
+  res.json((data || []).map(j => ({ ...j, profiles: pmap.get(j.user_id) || null })));
+});
+
+router.put('/jobs/:id/status', async (req, res) => {
+  const c = authedClient(req);
+  const { status } = req.body;
+  const { data, error } = await c.from('jobs').update({ status }).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// Disputes
+router.get('/disputes', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('disputes').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.put('/disputes/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { status, resolution } = req.body;
+  const { data, error } = await c.from('disputes').update({ status, resolution }).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  if (data) {
+    await notify(c, { userId: data.raised_by, type: 'dispute_update', title: 'Dispute updated', body: resolution || `Your dispute status is now: ${status}`, link: '/dispute.html' });
+    const { data: userProfile } = await c.from('profiles').select('email, display_name').eq('user_id', data.raised_by).maybeSingle();
+    if (userProfile?.email) sendEmail('dispute_update', userProfile.email, { name: userProfile.display_name, message: resolution || `Status: ${status}` }).catch(() => {});
+  }
+  res.json(data);
+});
+
+// Payments
+router.get('/payments', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('payments').select('*').order('created_at', { ascending: false }).limit(100);
+  if (error) return res.status(400).json({ error: error.message });
+  const ids = [...new Set((data || []).flatMap(p => [p.client_id, p.worker_id]).filter(Boolean))];
+  const pmap = await profilesByIds(c, ids);
+  res.json((data || []).map(p => ({ ...p, client: pmap.get(p.client_id) || null, worker: pmap.get(p.worker_id) || null })));
+});
+
+router.put('/payments/:id/release', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('payments').update({ status: 'released', released_at: new Date().toISOString() }).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  if (data && data.purpose === 'ai_screening' && data.job_id) {
+    await c.from('jobs').update({ ai_screening_enabled: true }).eq('id', data.job_id);
+  }
+  if (data && data.purpose === 'escrow' && data.worker_id) {
+    await notify(c, { userId: data.worker_id, type: 'payment_released', title: 'Payment released', body: `${data.amount} has been released to you.`, link: '/payments.html' });
+    const { data: workerProfile } = await c.from('profiles').select('email, display_name').eq('user_id', data.worker_id).maybeSingle();
+    if (workerProfile?.email) sendEmail('payment_released', workerProfile.email, { name: workerProfile.display_name, amount: data.amount }).catch(() => {});
+  }
+  res.json(data);
+});
+
+// Subscriptions
+router.get('/subscriptions', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('subscriptions').select('*').eq('status', 'pending').order('created_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  const ids = (data || []).map(s => s.user_id).filter(Boolean);
+  const pmap = await profilesByIds(c, ids);
+  res.json((data || []).map(s => ({ ...s, user: pmap.get(s.user_id) || null })));
+});
+
+router.put('/subscriptions/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { status } = req.body;
+  const { data: sub } = await c.from('subscriptions').update({ status }).eq('id', req.params.id).select().single();
+  if (sub && status === 'approved') {
+    await c.from('profiles').update({ subscription_tier: sub.tier }).eq('user_id', sub.user_id);
+    await notify(c, { userId: sub.user_id, type: 'subscription_approved', title: 'Subscription approved', body: `Your ${sub.tier} plan is now active.`, link: '/dashboard.html' });
+  }
+  res.json(sub);
+});
+
+// Blog / News
+router.get('/blog', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('blog_posts').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.post('/blog', async (req, res) => {
+  const c = authedClient(req);
+  const payload = { ...req.body, author_id: req.user.id };
+  if (payload.status === 'published' && !payload.published_at) payload.published_at = new Date().toISOString();
+  const { data, error } = await c.from('blog_posts').insert(payload).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.put('/blog/:id', async (req, res) => {
+  const c = authedClient(req);
+  const payload = { ...req.body };
+  if (payload.status === 'published') {
+    const { data: existing } = await c.from('blog_posts').select('published_at').eq('id', req.params.id).maybeSingle();
+    if (!existing?.published_at) payload.published_at = new Date().toISOString();
+  }
+  const { data, error } = await c.from('blog_posts').update(payload).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.delete('/blog/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { error } = await c.from('blog_posts').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// Google AdSense units (real Google ad network — distinct from the custom ads/featured system above)
+router.get('/adsense-units', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('adsense_units').select('*').order('placement');
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.post('/adsense-units', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('adsense_units').insert(req.body).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.put('/adsense-units/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('adsense_units').update(req.body).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.delete('/adsense-units/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { error } = await c.from('adsense_units').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// Email Templates
+router.get('/email-templates', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('email_templates').select('*').order('template_key');
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.put('/email-templates/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { subject, body } = req.body;
+  const { data, error } = await c.from('email_templates').update({ subject, body, updated_at: new Date().toISOString() }).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// Read-only API key status — never exposes actual key values, just whether
+// each provider is configured. Deliberately not a "vault" that stores raw
+// secrets in the database: env vars are already the correct, secure place
+// for these, and duplicating them into a DB table (even encrypted) would be
+// a downgrade in practice, not an upgrade.
+router.get('/api-keys-status', (req, res) => {
+  const config = require('../services/ai/config');
+  const mask = (key) => key ? `••••${String(key).slice(-4)}` : null;
+  res.json({
+    openai: { configured: config.providers.openai.enabled, masked: mask(config.providers.openai.key) },
+    gemini: { configured: config.providers.gemini.enabled, masked: mask(config.providers.gemini.key) },
+    groq: { configured: config.providers.groq.enabled, masked: mask(config.providers.groq.key) },
+    googleVision: { configured: config.providers.googleVision.enabled, masked: mask(config.providers.googleVision.key) },
+    googleTranslate: { configured: config.providers.googleTranslate.enabled, masked: mask(config.providers.googleTranslate.key) },
+    textract: { configured: config.providers.textract.enabled, masked: config.providers.textract.accessKeyId ? mask(config.providers.textract.accessKeyId) : null },
+    whisper: { configured: config.providers.whisper.enabled, masked: mask(config.providers.whisper.key) },
+    resendEmail: { configured: !!process.env.RESEND_API_KEY, masked: mask(process.env.RESEND_API_KEY) },
+    supabaseServiceRole: { configured: !!process.env.SUPABASE_SERVICE_ROLE_KEY, masked: mask(process.env.SUPABASE_SERVICE_ROLE_KEY) }
+  });
+});
+
+router.get('/fraud-flags', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('fraud_flags').select('*').order('created_at', { ascending: false }).limit(100);
+  if (error) return res.status(400).json({ error: error.message });
+  const ids = [...new Set((data || []).map(f => f.user_id).filter(Boolean))];
+  const { data: profiles } = ids.length ? await c.from('profiles').select('user_id, display_name, email').in('user_id', ids) : { data: [] };
+  const map = new Map((profiles || []).map(p => [p.user_id, p]));
+  res.json((data || []).map(f => ({ ...f, profile: map.get(f.user_id) || null })));
+});
+
+router.put('/fraud-flags/:id/resolve', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('fraud_flags').update({ resolved: true }).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// Site Content (CMS-style key/value blocks)
+router.get('/site-content', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('site_content').select('*').order('page_key', { ascending: true });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.put('/site-content', async (req, res) => {
+  const c = authedClient(req);
+  const { page_key, section_key, content_type, value } = req.body;
+  if (!page_key || !section_key) return res.status(400).json({ error: 'page_key and section_key are required' });
+  const { data, error } = await c.from('site_content')
+    .upsert({ page_key, section_key, content_type: content_type || 'text', value, updated_by: req.user.id, updated_at: new Date().toISOString() }, { onConflict: 'page_key,section_key' })
+    .select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.delete('/site-content/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { error } = await c.from('site_content').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// Testimonials moderation
+router.get('/testimonials', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('testimonials').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.put('/testimonials/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { status } = req.body;
+  const { data, error } = await c.from('testimonials').update({ status }).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.delete('/testimonials/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { error } = await c.from('testimonials').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// Featured Items — search helper so the admin can find a service/product/job to feature without pasting raw UUIDs
+router.get('/featured/search', async (req, res) => {
+  const c = authedClient(req);
+  const { type, q } = req.query;
+  const table = type === 'product' ? 'products' : type === 'job' ? 'jobs' : 'services';
+  let query = c.from(table).select('id, title').limit(10);
+  if (q) query = query.ilike('title', `%${q}%`);
+  const { data, error } = await query;
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.get('/featured', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('featured_items').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.post('/featured', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('featured_items').insert({ ...req.body, created_by: req.user.id }).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.put('/featured/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('featured_items').update(req.body).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.delete('/featured/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { error } = await c.from('featured_items').update({ status: 'paused' }).eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// Comments & Suggestions moderation
+router.get('/comments', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('comments').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.put('/comments/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { status } = req.body;
+  const { data, error } = await c.from('comments').update({ status }).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// Subscription Plans (admin-configurable, replaces hardcoded tiers)
+router.get('/plans', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('subscription_plans').select('*').order('price', { ascending: true });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.post('/plans', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('subscription_plans').insert(req.body).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.put('/plans/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('subscription_plans').update(req.body).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.delete('/plans/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { error } = await c.from('subscription_plans').update({ is_active: false }).eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// Ads
+router.get('/ads', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('ads').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.post('/ads', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('ads').insert(req.body).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.put('/ads/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('ads').update(req.body).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.delete('/ads/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { error } = await c.from('ads').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
+// Audit logs
+router.get('/audit', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(100);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+// Settings
+router.get('/settings', async (req, res) => {
+  const c = authedClient(req);
+  const { data } = await c.from('platform_settings').select('*').limit(1).single();
+  res.json(data);
+});
+
+router.put('/settings', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('platform_settings').update(req.body).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+// Export
+// Support Tickets
+router.get('/support/tickets', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('support_tickets').select('*').order('updated_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.get('/support/tickets/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { data: ticket, error } = await c.from('support_tickets').select('*').eq('id', req.params.id).maybeSingle();
+  if (error) return res.status(400).json({ error: error.message });
+  const { data: messages } = await c.from('support_ticket_messages').select('*').eq('ticket_id', req.params.id).order('created_at', { ascending: true });
+  res.json({ ticket, messages: messages || [] });
+});
+
+router.put('/support/tickets/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { status, priority, assigned_to } = req.body;
+  const patch = { updated_at: new Date().toISOString() };
+  if (status) patch.status = status;
+  if (priority) patch.priority = priority;
+  if (assigned_to !== undefined) patch.assigned_to = assigned_to;
+  const { data, error } = await c.from('support_tickets').update(patch).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
+});
+
+router.post('/support/tickets/:id/messages', async (req, res) => {
+  const c = authedClient(req);
+  const { body } = req.body;
+  const { data, error } = await c.from('support_ticket_messages').insert({ ticket_id: req.params.id, sender_id: req.user.id, body }).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  await c.from('support_tickets').update({ updated_at: new Date().toISOString() }).eq('id', req.params.id);
+  res.json(data);
+});
+
+// Backup & Recovery — full data export as one downloadable JSON bundle.
+// Backup & Recovery. Manual download always works. Automated daily backups
+// run if SUPABASE_SERVICE_ROLE_KEY is set (see server/jobs/backup-scheduler.js —
+// this endpoint needs no bearer token from a live admin, so it needs
+// service-role privileges to read every table unattended).
+const { BACKUP_TABLES, runBackup } = require('../jobs/backup-scheduler');
+
+router.get('/backup/status', async (req, res) => {
+  res.json({ automatedEnabled: !!process.env.SUPABASE_SERVICE_ROLE_KEY });
+});
+
+router.get('/backup/export', async (req, res) => {
+  const c = authedClient(req);
+  const bundle = { exportedAt: new Date().toISOString(), tables: {} };
+  for (const table of BACKUP_TABLES) {
+    const { data, error } = await c.from(table).select('*');
+    bundle.tables[table] = error ? { error: error.message } : data;
+  }
+  res.setHeader('Content-Disposition', `attachment; filename="skillbridge-backup-${Date.now()}.json"`);
+  res.json(bundle);
+});
+
+router.get('/backup/list', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.storage.from('backups').list('auto', { sortBy: { column: 'created_at', order: 'desc' }, limit: 30 });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
+router.post('/backup/run-now', async (req, res) => {
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) return res.status(400).json({ error: 'SUPABASE_SERVICE_ROLE_KEY is not configured — set it to enable server-side backups.' });
+  try { await runBackup(); res.json({ ok: true }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// Restore: safe merge only — upserts each row by its existing id, never
+// deletes anything currently live. A destructive delete-then-replace restore
+// is intentionally not offered here; the risk of wiping real user data on a
+// mistake or a bad backup file is too high for a one-click action.
+router.post('/backup/restore', async (req, res) => {
+  const c = authedClient(req);
+  const { bundle } = req.body;
+  if (!bundle?.tables) return res.status(400).json({ error: 'Invalid backup file.' });
+  const results = {};
+  for (const table of BACKUP_TABLES) {
+    const rows = bundle.tables[table];
+    if (!Array.isArray(rows) || !rows.length) { results[table] = 'skipped (empty)'; continue; }
+    const { error } = await c.from(table).upsert(rows, { onConflict: 'id' });
+    results[table] = error ? `error: ${error.message}` : `merged ${rows.length} row(s)`;
+  }
+  res.json({ results });
+});
+
+router.get('/export/:sheet', async (req, res) => {
+  const c = authedClient(req);
+  const sheet = req.params.sheet;
+  let rows = [];
+  if (sheet === 'processing') {
+    const { data } = await c.from('payments').select('*').in('status', ['pending', 'in_escrow']);
+    rows = data || [];
+  } else if (sheet === 'completed') {
+    const { data } = await c.from('payments').select('*').eq('status', 'released');
+    rows = data || [];
+  }
+  res.json({ sheet, rows, exportedAt: new Date().toISOString() });
+});
+
+module.exports = router;
