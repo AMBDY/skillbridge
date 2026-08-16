@@ -11,6 +11,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     { id: 'users', label: 'Users' },
     { id: 'kyc', label: 'KYC Review' },
     { id: 'jobs', label: 'Job Moderation' },
+    { id: 'listings', label: 'Listings Moderation' },
+    { id: 'messages', label: 'Messages' },
     { id: 'recruitment', label: 'Recruitment Jobs' },
     { id: 'disputes', label: 'Disputes' },
     { id: 'payments', label: 'Payments' },
@@ -50,6 +52,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (sec === 'users') return await loadUsers();
       if (sec === 'kyc') return await loadKyc();
       if (sec === 'jobs') return await loadJobs();
+      if (sec === 'listings') return await loadListings();
+      if (sec === 'messages') return await loadMessages();
       if (sec === 'recruitment') return await loadRecruitmentJobs();
       if (sec === 'disputes') return await loadDisputes();
       if (sec === 'payments') return await loadPayments();
@@ -92,12 +96,31 @@ document.addEventListener('DOMContentLoaded', async () => {
     const users = await API.get('/admin/users');
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Users</h1>
-      <table class="table" style="margin-top:24px"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>KYC</th><th>Tier</th><th>Actions</th></tr></thead><tbody>
-      ${users.map(u => `<tr><td>${u.display_name}</td><td>${u.email || ''}</td><td>${u.role}</td><td>L${u.kyc_level}</td><td>${u.subscription_tier}</td>
-        <td><button class="btn btn-outline btn-sm" onclick="toggleAdmin('${u.user_id}')">Make Admin</button></td></tr>`).join('')}
+      <table class="table" style="margin-top:24px"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>KYC</th><th>Tier</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+      ${users.map(u => `<tr>
+        <td>${u.display_name}</td><td>${u.email || ''}</td><td>${u.role}</td><td>L${u.kyc_level}</td><td>${u.subscription_tier}</td>
+        <td><span class="badge ${u.account_status === 'active' ? 'badge-verified' : ''}" style="${u.account_status !== 'active' ? 'background:#fee2e2;color:#b91c1c' : ''}">${u.account_status || 'active'}</span></td>
+        <td style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-outline btn-sm" onclick="toggleAdmin('${u.user_id}')">Make Admin</button>
+          ${u.account_status !== 'suspended' ? `<button class="btn btn-outline btn-sm" onclick="setAccountStatus('${u.user_id}','suspended')">Suspend</button>` : ''}
+          ${u.account_status !== 'banned' ? `<button class="btn btn-outline btn-sm" onclick="setAccountStatus('${u.user_id}','banned')">Ban</button>` : ''}
+          ${u.account_status !== 'active' ? `<button class="btn btn-gold btn-sm" onclick="setAccountStatus('${u.user_id}','active')">Restore</button>` : ''}
+        </td>
+      </tr>`).join('')}
       </tbody></table>`;
   }
   window.toggleAdmin = async (id) => { await API.put(`/admin/users/${id}`, { role: 'admin' }); Toast.show('User promoted to admin'); load('users'); };
+  window.setAccountStatus = async (id, account_status) => {
+    if (account_status === 'active') {
+      try { await API.put(`/admin/users/${id}`, { account_status }); Toast.show('Account restored'); load('users'); }
+      catch (e) { Toast.show(e.message); }
+      return;
+    }
+    promptReason(account_status === 'suspended' ? 'Suspend Account' : 'Ban Account', async (reason) => {
+      try { await API.put(`/admin/users/${id}`, { account_status, reason }); Toast.show(`Account ${account_status}`); load('users'); }
+      catch (e) { Toast.show(e.message); }
+    });
+  };
 
   async function loadKyc() {
     const items = await API.get('/admin/kyc');
@@ -115,7 +138,18 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
         </div></div>`).join('') : '<p style="color:var(--text-muted);margin-top:24px">No pending KYC submissions.</p>'}`;
   }
-  window.reviewKyc = async (id, status) => { await API.put(`/admin/kyc/${id}`, { status }); Toast.show('KYC ' + status); load('kyc'); };
+  window.reviewKyc = async (id, status) => {
+    if (status === 'rejected') {
+      return promptReason('Reject KYC', async (reason) => {
+        await API.put(`/admin/kyc/${id}`, { status, reviewer_note: reason });
+        Toast.show('KYC ' + status);
+        load('kyc');
+      });
+    }
+    await API.put(`/admin/kyc/${id}`, { status });
+    Toast.show('KYC ' + status);
+    load('kyc');
+  };
 
   async function loadJobs() {
     const jobs = await API.get('/admin/jobs');
@@ -123,10 +157,169 @@ document.addEventListener('DOMContentLoaded', async () => {
       <h1 class="section-title">Job Moderation</h1>
       <table class="table" style="margin-top:24px"><thead><tr><th>Title</th><th>Client</th><th>Status</th><th>Actions</th></tr></thead><tbody>
       ${jobs.map(j => `<tr><td>${j.title}</td><td>${j.profiles?.display_name || ''}</td><td><span class="badge badge-kyc">${j.status}</span></td>
-        <td><button class="btn btn-gold btn-sm" onclick="setJobStatus('${j.id}','approved')">Approve</button> <button class="btn btn-outline btn-sm" onclick="setJobStatus('${j.id}','cancelled')">Reject</button></td></tr>`).join('')}
-      </tbody></table>`;
+        <td>
+          <button class="btn btn-outline btn-sm" onclick="viewJobDetail('${j.id}')">View</button>
+          <button class="btn btn-gold btn-sm" onclick="setJobStatus('${j.id}','approved')">Approve</button>
+          <button class="btn btn-outline btn-sm" onclick="rejectJob('${j.id}')">Reject</button>
+        </td></tr>`).join('')}
+      </tbody></table>
+      <div id="jobDetailBox" style="margin-top:20px"></div>`;
+    window.__jobsCache = jobs;
   }
+  window.viewJobDetail = (id) => {
+    const j = (window.__jobsCache || []).find(x => x.id === id);
+    if (!j) return;
+    document.getElementById('jobDetailBox').innerHTML = `
+      <div class="card"><div class="card-body">
+        <h3>${j.title}</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem">Posted by ${j.profiles?.display_name || 'unknown'} • ${timeAgo(j.created_at)}</p>
+        <p style="margin-top:10px;color:var(--text-soft)">${j.description || 'No description provided.'}</p>
+        <div class="card-meta" style="margin-top:10px">
+          <span>Budget: ${fmtPrice(j.budget || 0)}</span><span>•</span><span>${j.location || j.state || 'Not stated'}</span><span>•</span><span>${j.duration || 'Not stated'}</span>
+        </div>
+        ${j.reference_images?.length ? `<div style="display:flex;gap:8px;margin-top:10px">${j.reference_images.map(img => `<img src="${img}" style="width:80px;height:80px;object-fit:cover;border-radius:8px">`).join('')}</div>` : ''}
+      </div></div>`;
+  };
   window.setJobStatus = async (id, status) => { await API.put(`/admin/jobs/${id}/status`, { status }); Toast.show('Job ' + status); load('jobs'); };
+  window.rejectJob = (id) => {
+    promptReason('Reject Job', async (reason) => {
+      await API.put(`/admin/jobs/${id}/status`, { status: 'cancelled', reason });
+      Toast.show('Job rejected');
+      load('jobs');
+    });
+  };
+
+  async function loadListings() {
+    const [{ products, services }, all] = await Promise.all([
+      API.get('/admin/listings/pending'),
+      API.get('/admin/listings/all')
+    ]);
+    const pending = [...products.map(p => ({ ...p, type: 'products' })), ...services.map(s => ({ ...s, type: 'services' }))];
+    const active = [...all.products.map(p => ({ ...p, type: 'products' })), ...all.services.map(s => ({ ...s, type: 'services' }))].filter(l => l.status === 'active');
+
+    function listingCard(l, actionsHtml) {
+      return `<div class="card" style="margin-top:12px"><div class="card-body">
+        <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
+          <div>
+            <strong>${l.title}</strong> <span class="badge badge-kyc">${l.type === 'products' ? 'Product' : 'Service'}</span>
+            <div class="card-meta">${fmtPrice(l.price || 0)} • ${timeAgo(l.created_at)}</div>
+            <p style="margin-top:6px;color:var(--text-soft);font-size:0.9rem">${l.description || ''}</p>
+            ${l.images?.length ? `<div style="display:flex;gap:6px;margin-top:8px">${l.images.slice(0, 4).map(img => `<img src="${img}" style="width:60px;height:60px;object-fit:cover;border-radius:6px">`).join('')}</div>` : ''}
+          </div>
+          <div style="display:flex;gap:8px;align-items:start;flex-wrap:wrap">${actionsHtml}</div>
+        </div>
+      </div></div>`;
+    }
+
+    document.getElementById('adminMain').innerHTML = `
+      <h1 class="section-title">Listings Moderation</h1>
+      <p class="section-sub">Products and services wait here until approved — nothing goes live without your review.</p>
+
+      <h3 style="margin-top:20px">Pending Approval (${pending.length})</h3>
+      ${pending.length ? pending.map(l => listingCard(l, `
+        <button class="btn btn-gold btn-sm" onclick="setListingStatus('${l.type}','${l.id}','active')">Approve</button>
+        <button class="btn btn-outline btn-sm" onclick="rejectListing('${l.type}','${l.id}')">Reject</button>
+      `)).join('') : '<p style="color:var(--text-muted)">Nothing pending.</p>'}
+
+      <h3 style="margin-top:28px">Live Listings (${active.length})</h3>
+      ${active.length ? active.map(l => listingCard(l, `
+        <button class="btn btn-outline btn-sm" onclick="pauseListing('${l.type}','${l.id}')">Pause</button>
+        <button class="btn btn-outline btn-sm" onclick="discontinueListing('${l.type}','${l.id}')">Discontinue</button>
+      `)).join('') : '<p style="color:var(--text-muted)">No live listings.</p>'}`;
+  }
+  window.setListingStatus = async (type, id, status) => {
+    try { await API.put(`/admin/listings/${type}/${id}/status`, { status }); Toast.show(`Listing ${status}`); load('listings'); }
+    catch (e) { Toast.show(e.message); }
+  };
+  window.rejectListing = (type, id) => {
+    promptReason('Reject Listing', async (reason) => {
+      await API.put(`/admin/listings/${type}/${id}/status`, { status: 'rejected', reason });
+      Toast.show('Listing rejected');
+      load('listings');
+    });
+  };
+  window.pauseListing = (type, id) => {
+    promptReason('Pause Listing', async (reason) => {
+      await API.put(`/admin/listings/${type}/${id}/status`, { status: 'paused', reason });
+      Toast.show('Listing paused');
+      load('listings');
+    });
+  };
+  window.discontinueListing = (type, id) => {
+    promptReason('Discontinue Listing', async (reason) => {
+      await API.put(`/admin/listings/${type}/${id}/status`, { status: 'deleted', reason });
+      Toast.show('Listing discontinued');
+      load('listings');
+    });
+  };
+
+  // Messages — broadcast to everyone/a role, or a direct chat message to one account
+  async function loadMessages() {
+    const users = await API.get('/admin/users');
+    document.getElementById('adminMain').innerHTML = `
+      <h1 class="section-title">Messages</h1>
+
+      <div class="card" style="margin:20px 0"><div class="card-body">
+        <h3>Broadcast</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem">Sends a real notification to every matching account — appears in their notification bell immediately.</p>
+        <div class="form-group"><label class="form-label">Send to</label>
+          <select class="form-select" id="broadcastRole">
+            <option value="all">Everyone</option>
+            <option value="client">Clients</option>
+            <option value="freelancer">Freelancers</option>
+            <option value="worker">Workers</option>
+            <option value="seller">Sellers</option>
+            <option value="admin">Admins</option>
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="broadcastTitle"></div>
+        <div class="form-group"><label class="form-label">Message</label><textarea class="form-textarea" id="broadcastBody" rows="3"></textarea></div>
+        <button class="btn btn-gold btn-sm" onclick="sendBroadcast()">Send Broadcast</button>
+        <div id="broadcastResult" style="margin-top:10px;font-size:0.85rem;color:var(--text-muted)"></div>
+      </div></div>
+
+      <div class="card"><div class="card-body">
+        <h3>Message an Individual Account</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem">Opens a real chat conversation with them — same inbox as any other message on the site.</p>
+        <div class="form-group"><label class="form-label">Account</label>
+          <select class="form-select" id="directUserSelect">
+            <option value="">Select a user...</option>
+            ${users.map(u => `<option value="${u.user_id}">${u.display_name} (${u.role}) — ${u.email || ''}</option>`).join('')}
+          </select>
+        </div>
+        <div class="form-group"><label class="form-label">Message</label><textarea class="form-textarea" id="directBody" rows="3"></textarea></div>
+        <button class="btn btn-gold btn-sm" onclick="sendDirectMessage()">Send Message</button>
+        <div id="directResult" style="margin-top:10px;font-size:0.85rem;color:var(--text-muted)"></div>
+      </div></div>`;
+  }
+  window.sendBroadcast = async () => {
+    const title = document.getElementById('broadcastTitle').value.trim();
+    const body = document.getElementById('broadcastBody').value.trim();
+    const target_role = document.getElementById('broadcastRole').value;
+    if (!title || !body) return Toast.show('Title and message are required');
+    const resEl = document.getElementById('broadcastResult');
+    resEl.textContent = 'Sending...';
+    try {
+      const { sent } = await API.post('/admin/broadcast', { title, body, target_role });
+      resEl.textContent = `Sent to ${sent} account(s).`;
+      document.getElementById('broadcastTitle').value = '';
+      document.getElementById('broadcastBody').value = '';
+    } catch (e) { resEl.textContent = 'Error: ' + e.message; }
+  };
+  window.sendDirectMessage = async () => {
+    const userId = document.getElementById('directUserSelect').value;
+    const body = document.getElementById('directBody').value.trim();
+    if (!userId) return Toast.show('Select a user first');
+    if (!body) return Toast.show('Write a message first');
+    const resEl = document.getElementById('directResult');
+    resEl.textContent = 'Sending...';
+    try {
+      const conv = await API.post('/chat/conversations', { other_user_id: userId });
+      await API.post(`/chat/conversations/${conv.id}/messages`, { body, message_type: 'text' });
+      resEl.textContent = 'Sent — visible in their Messages inbox.';
+      document.getElementById('directBody').value = '';
+    } catch (e) { resEl.textContent = 'Error: ' + e.message; }
+  };
 
   async function loadRecruitmentJobs() {
     const jobs = await API.get('/recruitment/admin/jobs');
@@ -137,8 +330,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       ${jobs.map(j => `<tr><td>${j.title}</td><td>${j.company_name}</td><td>${j.ai_plan}</td><td><span class="badge badge-kyc">${j.approval_status}</span></td>
         <td>
           ${j.approval_status !== 'approved' ? `<button class="btn btn-gold btn-sm" onclick="setRecruitmentJobStatus('${j.id}','approved')">Approve</button>` : ''}
-          ${j.approval_status !== 'rejected' ? `<button class="btn btn-outline btn-sm" onclick="setRecruitmentJobStatus('${j.id}','rejected')">Reject</button>` : ''}
-          ${j.approval_status === 'approved' ? `<button class="btn btn-outline btn-sm" onclick="setRecruitmentJobStatus('${j.id}','suspended')">Suspend</button>` : ''}
+          ${j.approval_status !== 'rejected' ? `<button class="btn btn-outline btn-sm" onclick="rejectRecruitmentJob('${j.id}')">Reject</button>` : ''}
+          ${j.approval_status === 'approved' ? `<button class="btn btn-outline btn-sm" onclick="suspendRecruitmentJob('${j.id}')">Suspend</button>` : ''}
         </td></tr>`).join('')}
       </tbody></table>`;
   }
@@ -146,6 +339,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     await API.put(`/recruitment/admin/jobs/${id}/status`, { approval_status });
     Toast.show('Recruitment job ' + approval_status);
     load('recruitment');
+  };
+  window.rejectRecruitmentJob = (id) => {
+    promptReason('Reject Recruitment Job', async (reason) => {
+      await API.put(`/recruitment/admin/jobs/${id}/status`, { approval_status: 'rejected', reason });
+      Toast.show('Recruitment job rejected');
+      load('recruitment');
+    });
+  };
+  window.suspendRecruitmentJob = (id) => {
+    promptReason('Suspend Recruitment Job', async (reason) => {
+      await API.put(`/recruitment/admin/jobs/${id}/status`, { approval_status: 'suspended', reason });
+      Toast.show('Recruitment job suspended');
+      load('recruitment');
+    });
   };
 
   async function loadDisputes() {
@@ -198,7 +405,18 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div style="display:flex;gap:8px"><button class="btn btn-gold btn-sm" onclick="reviewSub('${x.id}','approved')">Approve</button><button class="btn btn-outline btn-sm" onclick="reviewSub('${x.id}','rejected')">Reject</button><button class="btn btn-outline btn-sm" onclick="reviewSub('${x.id}','refunded')">Refund</button></div>
       </div></div>`).join('') : '<p style="color:var(--text-muted);margin-top:24px">No pending subscriptions.</p>'}`;
   }
-  window.reviewSub = async (id, status) => { await API.put(`/admin/subscriptions/${id}`, { status }); Toast.show('Subscription ' + status); load('subs'); };
+  window.reviewSub = async (id, status) => {
+    if (status === 'rejected' || status === 'refunded') {
+      return promptReason(status === 'rejected' ? 'Reject Subscription' : 'Refund Subscription', async (reason) => {
+        await API.put(`/admin/subscriptions/${id}`, { status, reason });
+        Toast.show('Subscription ' + status);
+        load('subs');
+      });
+    }
+    await API.put(`/admin/subscriptions/${id}`, { status });
+    Toast.show('Subscription ' + status);
+    load('subs');
+  };
 
   async function loadAI() {
     document.getElementById('adminMain').innerHTML = `
@@ -224,7 +442,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         <h3>Create Ad / Post</h3>
         <div class="form-row">
           <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="adTitle"></div>
-          <div class="form-group"><label class="form-label">Media URL</label><input class="form-input" id="adMedia"></div>
+          <div class="form-group"><label class="form-label">Media (image/video)</label>
+            <input class="form-input" type="file" id="adMediaInput" accept="image/*,video/*">
+            <div id="adMediaPreview" style="margin-top:6px"></div>
+          </div>
         </div>
         <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="adDesc"></textarea></div>
         <div class="form-row">
@@ -239,7 +460,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div class="form-group"><label class="form-label">Schedule (datetime)</label><input class="form-input" type="datetime-local" id="adSchedule"></div>
           <div class="form-group"><label class="form-label">Expiry (datetime)</label><input class="form-input" type="datetime-local" id="adExpiry"></div>
         </div>
-        <button class="btn btn-gold" onclick="createAd()">Create Ad</button>
+        <button class="btn btn-gold" onclick="createAd(this)">Create Ad</button>
       </div></div>
       <h3>Existing Ads</h3>
       ${ads.length ? ads.map(a => `<div class="card" style="margin-top:12px"><div class="card-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
@@ -247,12 +468,26 @@ document.addEventListener('DOMContentLoaded', async () => {
         <button class="btn btn-outline btn-sm" onclick="deleteAd('${a.id}')">Delete</button>
       </div></div>`).join('') : '<p style="color:var(--text-muted)">No ads yet.</p>'}`;
   }
-  window.createAd = async () => {
+  document.addEventListener('change', (e) => {
+    if (e.target.id !== 'adMediaInput') return;
+    const file = e.target.files[0];
+    const preview = document.getElementById('adMediaPreview');
+    if (!preview) return;
+    if (!file) { preview.innerHTML = ''; return; }
+    preview.textContent = `Selected: ${file.name}`;
+  });
+  window.createAd = async (btn) => {
     try {
+      const file = document.getElementById('adMediaInput').files[0];
+      let media_url = null;
+      if (file) {
+        if (btn) { btn.disabled = true; btn.textContent = 'Uploading...'; }
+        media_url = await Upload.file(file);
+      }
       await API.post('/admin/ads', {
         title: document.getElementById('adTitle').value,
         description: document.getElementById('adDesc').value,
-        media_url: document.getElementById('adMedia').value,
+        media_url,
         link_url: document.getElementById('adLink').value,
         link_new_tab: document.getElementById('adTab').value === 'true',
         ad_type: document.getElementById('adType').value,
@@ -262,6 +497,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       });
       Toast.show('Ad created'); load('ads');
     } catch (e) { Toast.show(e.message); }
+    finally { if (btn) { btn.disabled = false; btn.textContent = 'Create Ad'; } }
   };
   window.deleteAd = async (id) => { await API.del(`/admin/ads/${id}`); Toast.show('Ad deleted'); load('ads'); };
 
@@ -416,20 +652,62 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function loadSiteContent() {
     const rows = await API.get('/admin/site-content');
     const map = new Map(rows.map(r => [`${r.page_key}:${r.section_key}`, r]));
+    let heroImages = [];
+    try { heroImages = JSON.parse(map.get('homepage_hero:hero_images')?.value || '[]'); } catch { heroImages = []; }
+
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Site Content</h1>
       <p class="section-sub">Edit text blocks shown on public pages. Changes go live immediately.</p>
+
+      <div class="card" style="margin-top:20px"><div class="card-body">
+        <h3>Hero Slideshow Images</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem">Shown on the homepage, auto-rotating every 5 seconds.</p>
+        <input class="form-input" type="file" id="heroImagesInput" accept="image/*" multiple style="margin-top:8px">
+        <div id="heroImagesPreview" style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap"></div>
+        <button class="btn btn-gold btn-sm" style="margin-top:12px" onclick="saveHeroImages()">Save Slideshow</button>
+      </div></div>
+
       ${Object.entries(CONTENT_PAGES).map(([page, sections]) => `
         <div class="card" style="margin-top:20px"><div class="card-body">
           <h3 style="text-transform:capitalize">${page.replace('_', ' ')}</h3>
-          ${sections.map(sec => {
+          ${sections.filter(sec => sec !== 'hero_images').map(sec => {
             const existing = map.get(`${page}:${sec}`);
             const id = `sc_${page}_${sec}`;
             return `<div class="form-group"><label class="form-label" style="text-transform:capitalize">${sec.replace('_', ' ')}</label><textarea class="form-textarea" rows="2" id="${id}">${existing?.value || ''}</textarea></div>`;
           }).join('')}
-          <button class="btn btn-gold btn-sm" onclick="saveSiteContent('${page}', ${JSON.stringify(sections)})">Save ${page.replace('_', ' ')}</button>
+          <button class="btn btn-gold btn-sm" onclick="saveSiteContent('${page}', ${JSON.stringify(sections.filter(s => s !== 'hero_images'))})">Save ${page.replace('_', ' ')}</button>
         </div></div>`).join('')}`;
+
+    window.__heroImages = heroImages;
+    renderHeroImagesPreview();
+    document.getElementById('heroImagesInput').addEventListener('change', async () => {
+      const files = Array.from(document.getElementById('heroImagesInput').files);
+      if (!files.length) return;
+      Toast.show('Uploading...');
+      try {
+        for (const file of files) window.__heroImages.push(await Upload.file(file));
+        renderHeroImagesPreview();
+        Toast.show('Images uploaded — click Save Slideshow to publish');
+      } catch (e) { Toast.show(e.message); }
+      document.getElementById('heroImagesInput').value = '';
+    });
   }
+  function renderHeroImagesPreview() {
+    const box = document.getElementById('heroImagesPreview');
+    if (!box) return;
+    box.innerHTML = (window.__heroImages || []).map((url, i) => `
+      <div style="position:relative">
+        <img src="${url}" style="width:90px;height:90px;object-fit:cover;border-radius:8px">
+        <button type="button" onclick="window.__removeHeroImage(${i})" style="position:absolute;top:-6px;right:-6px;background:#b91c1c;color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button>
+      </div>`).join('') || '<p style="color:var(--text-muted);font-size:0.85rem">No images yet — using the built-in defaults.</p>';
+  }
+  window.__removeHeroImage = (i) => { window.__heroImages.splice(i, 1); renderHeroImagesPreview(); };
+  window.saveHeroImages = async () => {
+    try {
+      await API.put('/admin/site-content', { page_key: 'homepage_hero', section_key: 'hero_images', content_type: 'json', value: JSON.stringify(window.__heroImages || []) });
+      Toast.show('Slideshow saved — live on the homepage now');
+    } catch (e) { Toast.show(e.message); }
+  };
   window.saveSiteContent = async (page, sections) => {
     try {
       for (const sec of sections) {
@@ -904,6 +1182,33 @@ document.addEventListener('DOMContentLoaded', async () => {
     await API.del(`/admin/plans/${id}`);
     Toast.show('Plan deactivated');
     loadSettings();
+  };
+
+  // Reusable reason-prompt modal — used by every reject/suspend/pause/discontinue action
+  window.promptReason = (title, onConfirm) => {
+    const existing = document.getElementById('reasonModalOverlay');
+    if (existing) existing.remove();
+    const overlay = document.createElement('div');
+    overlay.id = 'reasonModalOverlay';
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;display:flex;align-items:center;justify-content:center;padding:20px';
+    overlay.innerHTML = `
+      <div class="card" style="max-width:440px;width:100%"><div class="card-body">
+        <h3>${title}</h3>
+        <p style="color:var(--text-muted);font-size:0.85rem;margin-top:4px">This reason is sent to the user in their notification.</p>
+        <div class="form-group" style="margin-top:12px"><textarea class="form-textarea" id="reasonModalInput" rows="4" placeholder="Explain why..." autofocus></textarea></div>
+        <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px">
+          <button class="btn btn-outline btn-sm" id="reasonModalCancel">Cancel</button>
+          <button class="btn btn-gold btn-sm" id="reasonModalConfirm">Confirm</button>
+        </div>
+      </div></div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('reasonModalCancel').addEventListener('click', () => overlay.remove());
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) overlay.remove(); });
+    document.getElementById('reasonModalConfirm').addEventListener('click', () => {
+      const reason = document.getElementById('reasonModalInput').value.trim();
+      overlay.remove();
+      onConfirm(reason);
+    });
   };
 
   load('overview');

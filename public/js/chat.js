@@ -1,5 +1,6 @@
 document.addEventListener('DOMContentLoaded', async () => {
   if (!Auth.isLoggedIn()) { location.href = '/signin.html'; return; }
+  renderAdSlot('#adSlotChat', 'chat');
   const user = Auth.user();
   const socket = io({ auth: { token: Auth.getToken() } });
   socket.emit('join', user.user_id);
@@ -137,9 +138,20 @@ document.addEventListener('DOMContentLoaded', async () => {
         Toast.show('Recording... click again to stop');
       } catch (e) { Toast.show('Microphone access denied'); }
     });
-    document.getElementById('acceptBtn').addEventListener('click', () => Toast.show('Offer accepted — Received button activates in 1 hour'));
-    document.getElementById('rejectBtn').addEventListener('click', () => Toast.show('Offer rejected'));
-    document.getElementById('counterBtn').addEventListener('click', () => { const v = prompt('Counter offer amount (₦):'); if (v) Toast.show('Counter offer sent: ₦' + v); });
+    document.getElementById('acceptBtn').addEventListener('click', () => {
+      socket.emit('message', { conversation_id: activeConv, sender_id: user.user_id, body: '✅ Offer accepted — the "Received" button activates 1 hour after this.', message_type: 'text' });
+      Toast.show('Offer accepted');
+    });
+    document.getElementById('rejectBtn').addEventListener('click', () => {
+      socket.emit('message', { conversation_id: activeConv, sender_id: user.user_id, body: '❌ Offer rejected.', message_type: 'text' });
+      Toast.show('Offer rejected');
+    });
+    document.getElementById('counterBtn').addEventListener('click', () => {
+      const v = prompt('Counter offer amount (₦):');
+      if (!v || isNaN(+v)) return;
+      socket.emit('message', { conversation_id: activeConv, sender_id: user.user_id, body: `🔁 Counter offer: ${fmtPrice(+v)}`, message_type: 'text' });
+      Toast.show('Counter offer sent');
+    });
     document.getElementById('agreementBtn').addEventListener('click', () => location.href = '/agreement.html?conv=' + conv.id + '&worker=' + activeOther);
   }
 

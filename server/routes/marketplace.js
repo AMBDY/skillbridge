@@ -54,9 +54,9 @@ router.get('/services', async (req, res) => {
 
 router.post('/services', authMiddleware, async (req, res) => {
   const c = authedClient(req);
-  const { category_id, title, description, price, delivery_days, images, video_url } = req.body;
+  const { category_id, title, description, price, delivery_days, images, video_url, location } = req.body;
   const { data, error } = await c.from('services').insert({
-    user_id: req.user.id, category_id, title, description, price, delivery_days, images, video_url
+    user_id: req.user.id, category_id, title, description, price, delivery_days, images, video_url, location, status: 'pending'
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
@@ -80,9 +80,9 @@ router.get('/products', async (req, res) => {
 
 router.post('/products', authMiddleware, async (req, res) => {
   const c = authedClient(req);
-  const { category_id, title, description, price, size, color, gender, images, video_url, stock } = req.body;
+  const { category_id, title, description, price, size, color, gender, images, video_url, stock, location, brand } = req.body;
   const { data, error } = await c.from('products').insert({
-    user_id: req.user.id, category_id, title, description, price, size, color, gender, images, video_url, stock
+    user_id: req.user.id, category_id, title, description, price, size, color, gender, images, video_url, stock, location, brand, status: 'pending'
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
@@ -128,7 +128,22 @@ router.get('/profile/:userId', async (req, res) => {
 
 router.put('/profile', authMiddleware, async (req, res) => {
   const c = authedClient(req);
-  const { data, error } = await c.from('profiles').update(req.body).eq('user_id', req.user.id).select().single();
+  // Only personal details are self-editable. role, kyc_level, subscription_tier,
+  // account_status, rating, review_count, completion_rate are set by the
+  // platform (KYC approval, subscription approval, moderation, reviews) —
+  // never directly by the account owner. Also enforced at the database
+  // level by a trigger, so this isn't the only line of defense.
+  const allowedFields = [
+    'first_name', 'middle_name', 'last_name', 'display_name', 'phone',
+    'country', 'state', 'city', 'address', 'bank_name', 'account_number',
+    'account_holder_name', 'profile_image', 'cover_image', 'about',
+    'cover_letter', 'availability', 'response_time_hours'
+  ];
+  const updates = {};
+  for (const field of allowedFields) {
+    if (req.body[field] !== undefined) updates[field] = req.body[field];
+  }
+  const { data, error } = await c.from('profiles').update(updates).eq('user_id', req.user.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
@@ -217,10 +232,11 @@ router.get('/featured', async (req, res) => {
 
 // Public: active ads for a given page placement, with lightweight view tracking
 router.get('/ads', async (req, res) => {
-  const page = req.query.page || 'all';
+  const pages = (req.query.page || 'all').split(',').map(p => p.trim()).filter(Boolean);
+  const matchPages = pages.includes('all') ? ['all'] : [...pages, 'all'];
   const { data, error } = await supabase.from('ads').select('*')
     .eq('status', 'active')
-    .in('target_page', page === 'all' ? ['all'] : [page, 'all'])
+    .in('target_page', matchPages)
     .or(`expires_at.is.null,expires_at.gt.${new Date().toISOString()}`)
     .lte('schedule_at', new Date().toISOString())
     .limit(3);
@@ -289,6 +305,18 @@ router.post('/subscriptions', authMiddleware, async (req, res) => {
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
+});
+
+router.get('/listings/mine', authMiddleware, async (req, res) => {
+  const c = authedClient(req);
+  const [products, services] = await Promise.all([
+    c.from('products').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false }),
+    c.from('services').select('*').eq('user_id', req.user.id).order('created_at', { ascending: false })
+  ]);
+  res.json([
+    ...(products.data || []).map(p => ({ ...p, type: 'product' })),
+    ...(services.data || []).map(s => ({ ...s, type: 'service' }))
+  ]);
 });
 
 // Notifications

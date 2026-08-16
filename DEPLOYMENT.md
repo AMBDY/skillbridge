@@ -29,6 +29,13 @@
    19. `20260715133000_homepage_sections.sql`
    20. `20260715134000_email_templates.sql`
    21. `20260715135000_fraud_flags.sql`
+   22. `20260715136000_seed_categories.sql`
+   23. `20260715137000_restrict_job_posting.sql`
+   24. `20260715138000_listing_approval.sql`
+   25. `20260715139000_account_status.sql`
+   26. `20260715140000_hero_images_seed.sql`
+   27. `20260715141000_protect_profile_fields.sql`
+   28. `20260715142000_listing_location_brand.sql`
 
    Every migration is written to be safe to re-run (uses `IF NOT EXISTS` /
    `DROP POLICY IF EXISTS` throughout, never `DROP TABLE`/`TRUNCATE`), so if

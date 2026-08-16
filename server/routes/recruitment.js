@@ -204,10 +204,17 @@ router.get('/admin/jobs', authMiddleware, async (req, res) => {
 router.put('/admin/jobs/:id/status', authMiddleware, async (req, res) => {
   if (!isAdmin(req.user.role)) return res.status(403).json({ error: 'Admin access required.' });
   const c = authedClient(req);
-  const { approval_status } = req.body;
+  const { approval_status, reason } = req.body;
   if (!['approved', 'rejected', 'suspended'].includes(approval_status)) return res.status(400).json({ error: 'Invalid approval status.' });
   const { data, error } = await c.from('recruitment_jobs').update({ approval_status }).eq('id', req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
+  if (data) {
+    await notify(c, {
+      userId: data.recruiter_id, type: `recruitment_job_${approval_status}`, title: `Recruitment job ${approval_status}`,
+      body: reason ? `"${data.title}" was ${approval_status}. Reason: ${reason}` : `"${data.title}" was ${approval_status}.`,
+      link: '/recruiter-jobs.html'
+    });
+  }
   res.json(data);
 });
 

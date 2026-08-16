@@ -50,11 +50,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (videoFile) { btn.textContent = 'Uploading video...'; data.video_url = await Upload.file(videoFile); }
       const endpoint = typeSel.value === 'service' ? '/marketplace/services' : '/marketplace/products';
       await API.post(endpoint, data);
-      Toast.show('Listing published!');
+      Toast.show('Submitted! A superadmin will review it before it goes live.');
       setTimeout(() => location.href = '/dashboard.html', 1200);
     } catch (err) {
       Toast.show(err.message);
-      btn.disabled = false; btn.textContent = 'Publish Listing';
+      btn.disabled = false; btn.textContent = 'Submit for Approval';
     }
   });
 });

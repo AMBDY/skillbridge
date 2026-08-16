@@ -10,8 +10,8 @@
 <nav id="navbar"></nav>
 <main class="container" style="padding:48px 24px">
   <span class="eyebrow">About SkillBridge</span>
-  <h1 class="section-title">Bridging African Talent with Global Opportunity</h1>
-  <p class="section-sub" style="font-size:1.1rem;max-width:720px">SkillBridge is a premium marketplace platform combining freelance services, e-commerce, and a job board — built specifically for Africa, starting in Nigeria, with a vision for global expansion.</p>
+  <h1 class="section-title" id="aboutHeading">Bridging African Talent with Global Opportunity</h1>
+  <p class="section-sub" id="aboutBody" style="font-size:1.1rem;max-width:720px">SkillBridge is a premium marketplace platform combining freelance services, e-commerce, and a job board — built specifically for Africa, starting in Nigeria, with a vision for global expansion.</p>
 
   <div class="grid grid-3" style="margin:48px 0">
     <div class="card"><div class="card-body"><h3 style="font-size:1.3rem;margin-bottom:8px">🛡️ Trust First</h3><p style="color:var(--text-soft)">Multi-level KYC verification and escrow-protected payments on every transaction.</p></div></div>
@@ -35,5 +35,14 @@
 </main>
 <footer id="footer"></footer>
 <script src="/js/app.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const content = await API.get('/marketplace/site-content/about');
+    if (content.heading) document.getElementById('aboutHeading').textContent = content.heading;
+    if (content.body) document.getElementById('aboutBody').textContent = content.body;
+  } catch { /* falls back to the default text above */ }
+});
+</script>
 </body>
 </html>

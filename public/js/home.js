@@ -27,10 +27,19 @@ const RECENT_JOBS = [
   { title: 'Living Room Interior', price: 320000, cat: 'Interior Decoration', img: 'https://images.pexels.com/photos/1571460/pexels-photo-1571460.jpeg' },
 ];
 
-function initHero() {
+async function initHero() {
   const hero = document.getElementById('hero');
   const dots = document.getElementById('heroDots');
-  HERO_SLIDES.forEach((url, i) => {
+  let slides = HERO_SLIDES;
+  try {
+    const content = await API.get('/marketplace/site-content/homepage_hero');
+    if (content.hero_images) {
+      const parsed = JSON.parse(content.hero_images);
+      if (Array.isArray(parsed) && parsed.length) slides = parsed;
+    }
+  } catch { /* fall back to the default slides */ }
+
+  slides.forEach((url, i) => {
     const slide = document.createElement('div');
     slide.className = 'hero-slide' + (i === 0 ? ' active' : '');
     slide.style.backgroundImage = `url('${url}')`;
@@ -46,7 +55,7 @@ function initHero() {
     document.querySelectorAll('.hero-dot').forEach((d, idx) => d.classList.toggle('active', idx === i));
     cur = i;
   }
-  setInterval(() => goTo((cur + 1) % HERO_SLIDES.length), 5000);
+  setInterval(() => goTo((cur + 1) % slides.length), 5000);
 }
 
 function renderFeaturedCats() {
@@ -149,7 +158,7 @@ async function applyHomepageSectionOrder() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-  renderAdSlot('#adSlotHomepage', 'homepage');
+  renderAdSlot('#adSlotHomepage', 'homepage,landing');
   applyHomepageSectionOrder();
   initHero();
   renderFeaturedCats();

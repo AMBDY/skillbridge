@@ -30,6 +30,10 @@
         <div class="form-group svc-only"><label class="form-label">Delivery time (days)</label><input class="form-input" type="number" name="delivery_days" value="3"></div>
         <div class="form-group prod-only" style="display:none"><label class="form-label">Stock</label><input class="form-input" type="number" name="stock" value="1"></div>
       </div>
+      <div class="form-row">
+        <div class="form-group"><label class="form-label">Location</label><input class="form-input" name="location" placeholder="e.g. Lagos, Nigeria"></div>
+        <div class="form-group prod-only" style="display:none"><label class="form-label">Brand</label><input class="form-input" name="brand"></div>
+      </div>
       <div class="form-row prod-only" style="display:none">
         <div class="form-group"><label class="form-label">Size</label><input class="form-input" name="size"></div>
         <div class="form-group"><label class="form-label">Color</label><input class="form-input" name="color"></div>
@@ -43,7 +47,7 @@
         <div id="imagesPreview" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
       <div class="form-group"><label class="form-label">Video (optional)</label><input class="form-input" type="file" id="videoInput" accept="video/*"></div>
-      <button type="submit" class="btn btn-gold btn-block btn-lg">Publish Listing</button>
+      <button type="submit" class="btn btn-gold btn-block btn-lg">Submit for Approval</button>
     </form>
   </div>
 </div>

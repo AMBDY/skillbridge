@@ -3,6 +3,7 @@ const JobsPage = (function () {
   const CAT_ICONS = { 'remote-jobs': '🌐', 'office-jobs': '🏢', 'contract-jobs': '📄', 'hybrid-jobs': '🔀', 'internship': '🎓' };
 
   async function init() {
+    renderAdSlot('#adSlotJobs', 'jobs');
     const cats = await API.get('/marketplace/categories?ecosystem=jobs').catch(() => []);
     document.getElementById('catGrid').innerHTML = cats.map(c => `
       <a href="/category.html?ecosystem=jobs&slug=${c.slug}" class="cat-tile">

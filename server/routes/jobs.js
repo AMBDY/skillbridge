@@ -69,6 +69,9 @@ router.get('/:id', async (req, res) => {
 
 // Create job
 router.post('/', authMiddleware, async (req, res) => {
+  if (!['client', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Only clients can post jobs.' });
+  }
   const c = authedClient(req);
   const { data, error } = await c.from('jobs').insert({
     user_id: req.user.id, ...req.body, status: 'pending'

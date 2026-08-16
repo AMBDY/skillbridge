@@ -17,8 +17,14 @@ router.post('/', authMiddleware, async (req, res) => {
   const paymentPurpose = ['escrow', 'ai_screening', 'subscription'].includes(purpose) ? purpose : 'escrow';
   let fee = 0;
   if (paymentPurpose === 'escrow') {
-    const { data: settings } = await supabase.from('platform_settings').select('service_fee_percent').limit(1).maybeSingle();
-    const feePercent = settings?.service_fee_percent || 10;
+    const { data: settings } = await supabase.from('platform_settings')
+      .select('service_fee_percent, commission_freelancer, commission_worker, commission_seller').limit(1).maybeSingle();
+    let feePercent = settings?.service_fee_percent || 10;
+    if (worker_id) {
+      const { data: workerProfile } = await supabase.from('profiles').select('role').eq('user_id', worker_id).maybeSingle();
+      const roleCommission = { freelancer: settings?.commission_freelancer, worker: settings?.commission_worker, seller: settings?.commission_seller }[workerProfile?.role];
+      if (roleCommission != null) feePercent = roleCommission;
+    }
     fee = +(amount * feePercent / 100).toFixed(2);
   }
   const { data, error } = await c.from('payments').insert({

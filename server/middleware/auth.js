@@ -19,12 +19,16 @@ async function authMiddleware(req, res, next) {
     const userId = data.user.id;
 
     // Look up the user's role from profiles table
-    const { data: profile } = await supabase.from('profiles').select('role, email, display_name').eq('user_id', userId).maybeSingle();
+    const { data: profile } = await supabase.from('profiles').select('role, email, display_name, account_status').eq('user_id', userId).maybeSingle();
+    if (profile?.account_status === 'banned') {
+      return res.status(403).json({ error: 'This account has been banned. Contact support if you believe this is a mistake.' });
+    }
     req.user = {
       id: userId,
       email: profile?.email || data.user.email || '',
       role: profile?.role || '',
-      display_name: profile?.display_name || ''
+      display_name: profile?.display_name || '',
+      account_status: profile?.account_status || 'active'
     };
     next();
   } catch (e) {

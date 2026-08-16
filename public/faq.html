@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FAQ — SkillBridge</title>
+<link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<nav id="navbar"></nav>
+<main class="container" style="padding:48px 24px;max-width:760px">
+  <span class="eyebrow">Help Center</span>
+  <h1 class="section-title" id="faqHeading">Frequently Asked Questions</h1>
+  <p class="section-sub" id="faqBody">Answers to the most common questions about SkillBridge.</p>
+
+  <div id="faqList" style="margin-top:32px;display:flex;flex-direction:column;gap:12px"></div>
+
+  <div class="card" style="margin-top:32px"><div class="card-body" style="text-align:center">
+    <p style="color:var(--text-muted)">Still have a question?</p>
+    <a href="/contact.html" class="btn btn-outline btn-sm" style="margin-top:8px">Contact Us</a>
+    <a href="/support.html" class="btn btn-outline btn-sm" style="margin-top:8px">Open a Support Ticket</a>
+  </div></div>
+</main>
+<footer id="footer"></footer>
+<script src="/js/sb-config.js"></script>
+<script src="/js/app.js"></script>
+<script>
+const FAQS = [
+  { q: 'How does escrow work?', a: 'When you fund a job, the money is held by SkillBridge, not sent directly to the worker. It only releases once you click "Received" and a superadmin confirms — or automatically after the configured hold time.' },
+  { q: 'How do I get verified (KYC)?', a: 'Go to Dashboard → Verify Identity, take a selfie holding a paper with your name and today\'s date, and submit. A superadmin reviews it — you\'ll get a notification once approved.' },
+  { q: 'What are subscription plans for?', a: 'They boost your visibility in search and on the homepage. Prices and perks are set by the superadmin and shown on the Subscribe page.' },
+  { q: 'How does Job Recruitment AI screening work?', a: 'Once a client enables it (a one-time fee), applications are scored against the job\'s requirements — either automatically or manually, depending on the client\'s setting.' },
+  { q: 'Why is my job/listing not showing up yet?', a: 'Every job posting and product/service listing is reviewed by a superadmin before it goes live. You\'ll get a notification once it\'s approved or if it needs changes.' },
+  { q: 'How do I raise a dispute?', a: 'From your Payments page, click "Raise a Dispute" on the relevant payment. A superadmin reviews every dispute.' },
+];
+document.getElementById('faqList').innerHTML = FAQS.map((f, i) => `
+  <div class="card"><div class="card-body" style="cursor:pointer" onclick="this.nextElementSibling.style.display = this.nextElementSibling.style.display === 'none' ? 'block' : 'none'">
+    <strong>${f.q}</strong>
+  </div><div style="display:none;padding:0 20px 16px;color:var(--text-soft)">${f.a}</div></div>`).join('');
+
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const content = await API.get('/marketplace/site-content/faq');
+    if (content.heading) document.getElementById('faqHeading').textContent = content.heading;
+    if (content.body) document.getElementById('faqBody').textContent = content.body;
+  } catch { /* falls back to default text */ }
+});
+</script>
+</body>
+</html>

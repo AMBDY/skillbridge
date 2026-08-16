@@ -11,6 +11,7 @@
 <main class="container" style="padding:32px 24px;max-width:760px">
   <h1 class="section-title" id="paymentTitle">Choose Payment Method</h1>
   <p class="section-sub" id="paymentSub">Funds are held in escrow until you confirm receipt of work.</p>
+  <div class="ad-slot" id="adSlotPayment" style="margin:16px 0">Advertisement</div>
   <div class="grid grid-2" style="margin:24px 0">
     <a href="/pay-crypto.html" id="cryptoLink" class="eco-card"><div class="eco-icon">₿</div><h3>Crypto (USDT)</h3><p>Pay with USDT to a verified wallet.</p></a>
     <a href="/pay-fiat.html" id="fiatLink" class="eco-card"><div class="eco-icon">₦</div><h3>Fiat (Naira)</h3><p>Pay via Paystack or bank transfer.</p></a>
@@ -20,6 +21,7 @@
 <footer id="footer"></footer>
 <script src="/js/app.js"></script>
 <script>
+  renderAdSlot('#adSlotPayment', 'payment');
   const qs = location.search.slice(1);
   document.getElementById('cryptoLink').href = '/pay-crypto.html' + (qs ? '?' + qs : '');
   document.getElementById('fiatLink').href = '/pay-fiat.html' + (qs ? '?' + qs : '');

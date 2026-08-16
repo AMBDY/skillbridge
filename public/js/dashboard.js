@@ -29,12 +29,23 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div></div>`).join('')}
     </div>
 
+    <h2 style="font-size:1.6rem;margin:32px 0 16px">My Listings</h2>
+    <div id="myListings"></div>
+
     <h2 style="font-size:1.6rem;margin:32px 0 16px">My Jobs</h2>
     <div id="myJobs"></div>
 
     <h2 style="font-size:1.6rem;margin:32px 0 16px">My Payments</h2>
     <div id="myPayments"></div>
   `;
+
+  API.get('/marketplace/listings/mine').then(listings => {
+    document.getElementById('myListings').innerHTML = listings.length ? listings.map(l => `
+      <div class="card" style="margin-bottom:10px"><div class="card-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
+        <div><div style="font-weight:500">${l.title}</div><div class="card-meta"><span>${l.type}</span><span>•</span><span>${fmtPrice(l.price || 0)}</span></div></div>
+        <span class="badge ${l.status === 'active' ? 'badge-verified' : l.status === 'rejected' ? '' : 'badge-kyc'}" style="${l.status === 'rejected' ? 'background:#fee2e2;color:#b91c1c' : ''}">${l.status}</span>
+      </div></div>`).join('') : '<p style="color:var(--text-muted)">No listings yet.</p>';
+  }).catch(() => { document.getElementById('myListings').innerHTML = '<p style="color:var(--text-muted)">Could not load listings.</p>'; });
 
   const [ownJobs, publicJobs, payments] = await Promise.all([
     API.get('/jobs/mine').catch(() => []),

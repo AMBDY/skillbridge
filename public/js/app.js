@@ -269,7 +269,17 @@ function renderNav() {
     ? `<img src="${siteSettings.logo_url}" alt="${siteSettings.site_name}" style="height:32px">`
     : (siteSettings.site_name === 'SkillBridge' ? 'Skill<span>Bridge</span>' : (siteSettings.site_name || 'SkillBridge'));
   const recruitHref = (user && ['client', 'admin'].includes(user.role)) ? '/recruiter-jobs.html' : '/recruitment-jobs.html';
+  const roleLabels = { client: 'Client', freelancer: 'Freelancer', worker: 'Worker', seller: 'Seller', admin: 'Superadmin' };
   const authLinks = logged ? `
+          <a href="/profile.html?id=${user?.user_id}" class="nav-identity" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:inherit;padding:4px 10px;border-radius:20px;background:var(--bg-elev)">
+            <span style="width:26px;height:26px;border-radius:50%;overflow:hidden;flex-shrink:0;background:var(--gold);display:flex;align-items:center;justify-content:center;font-size:0.75rem;color:#fff">
+              ${user?.profile_image ? `<img src="${user.profile_image}" style="width:100%;height:100%;object-fit:cover">` : (user?.display_name || 'U').charAt(0).toUpperCase()}
+            </span>
+            <span style="display:flex;flex-direction:column;line-height:1.2">
+              <span style="font-size:0.82rem;font-weight:600">${user?.display_name || 'User'}</span>
+              <span style="font-size:0.7rem;color:var(--text-muted)">${roleLabels[user?.role] || user?.role || ''}</span>
+            </span>
+          </a>
           <a href="/chat.html" class="icon-btn" title="Messages">💬</a>
           <a href="${recruitHref}" class="btn btn-outline btn-sm">Job Recruitment</a>
           <a href="/dashboard.html" class="btn btn-outline btn-sm">Dashboard</a>
@@ -368,7 +378,7 @@ function renderFooter() {
           </div>
         </div>
         <div><h4>Ecosystems</h4><a href="/hire.html">Hire Talent</a><a href="/shop.html">Shop Products</a><a href="/jobs.html">Find Jobs</a></div>
-        <div><h4>Company</h4><a href="/about.html">About</a><a href="/about.html#mission">Mission</a><a href="/blog.html">Blog</a><a href="/signup.html">Sign up</a><a href="/signin.html">Sign in</a></div>
+        <div><h4>Company</h4><a href="/about.html">About</a><a href="/about.html#mission">Mission</a><a href="/blog.html">Blog</a><a href="/contact.html">Contact</a><a href="/faq.html">FAQ</a><a href="/signup.html">Sign up</a><a href="/signin.html">Sign in</a></div>
         <div><h4>Support</h4><a href="#">Help Center</a><a href="#">Contact</a><a href="#">Terms</a><a href="#">Privacy</a></div>
       </div>
       <div class="footer-bottom">

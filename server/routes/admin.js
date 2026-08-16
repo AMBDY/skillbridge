@@ -44,8 +44,19 @@ router.get('/users', async (req, res) => {
 
 router.put('/users/:id', async (req, res) => {
   const c = authedClient(req);
-  const { data, error } = await c.from('profiles').update(req.body).eq('user_id', req.params.id).select().single();
+  const { reason, ...updates } = req.body;
+  const { data, error } = await c.from('profiles').update(updates).eq('user_id', req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
+  if (data && updates.account_status && updates.account_status !== 'active') {
+    await notify(c, {
+      userId: req.params.id, type: `account_${updates.account_status}`, title: `Account ${updates.account_status}`,
+      body: reason ? `Your account has been ${updates.account_status}. Reason: ${reason}` : `Your account has been ${updates.account_status}.`,
+      link: '/support.html'
+    });
+  }
+  if (data && updates.account_status === 'active') {
+    await notify(c, { userId: req.params.id, type: 'account_restored', title: 'Account restored', body: 'Your account is back to normal standing.', link: '/dashboard.html' });
+  }
   res.json(data);
 });
 
@@ -69,6 +80,13 @@ router.put('/kyc/:id', async (req, res) => {
     const { data: userProfile } = await c.from('profiles').select('email, display_name').eq('user_id', kyc.user_id).maybeSingle();
     if (userProfile?.email) sendEmail('kyc_approved', userProfile.email, { name: userProfile.display_name }).catch(() => {});
   }
+  if (kyc && status === 'rejected') {
+    await notify(c, {
+      userId: kyc.user_id, type: 'kyc_rejected', title: 'KYC verification rejected',
+      body: reviewer_note ? `Your KYC submission was rejected. Reason: ${reviewer_note}` : 'Your KYC submission was rejected.',
+      link: '/kyc.html'
+    });
+  }
   res.json(kyc);
 });
 
@@ -84,9 +102,17 @@ router.get('/jobs', async (req, res) => {
 
 router.put('/jobs/:id/status', async (req, res) => {
   const c = authedClient(req);
-  const { status } = req.body;
+  const { status, reason } = req.body;
   const { data, error } = await c.from('jobs').update({ status }).eq('id', req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
+  if (data) {
+    const label = status === 'approved' ? 'approved' : status === 'cancelled' ? 'rejected' : status;
+    await notify(c, {
+      userId: data.user_id, type: `job_${status}`, title: `Job ${label}`,
+      body: reason ? `"${data.title}" was ${label}. Reason: ${reason}` : `"${data.title}" was ${label}.`,
+      link: `/job.html?id=${data.id}`
+    });
+  }
   res.json(data);
 });
 
@@ -148,11 +174,18 @@ router.get('/subscriptions', async (req, res) => {
 
 router.put('/subscriptions/:id', async (req, res) => {
   const c = authedClient(req);
-  const { status } = req.body;
+  const { status, reason } = req.body;
   const { data: sub } = await c.from('subscriptions').update({ status }).eq('id', req.params.id).select().single();
   if (sub && status === 'approved') {
     await c.from('profiles').update({ subscription_tier: sub.tier }).eq('user_id', sub.user_id);
     await notify(c, { userId: sub.user_id, type: 'subscription_approved', title: 'Subscription approved', body: `Your ${sub.tier} plan is now active.`, link: '/dashboard.html' });
+  }
+  if (sub && (status === 'rejected' || status === 'refunded')) {
+    await notify(c, {
+      userId: sub.user_id, type: `subscription_${status}`, title: `Subscription ${status}`,
+      body: reason ? `Your ${sub.tier} plan request was ${status}. Reason: ${reason}` : `Your ${sub.tier} plan request was ${status}.`,
+      link: '/subscribe.html'
+    });
   }
   res.json(sub);
 });
@@ -274,6 +307,63 @@ router.put('/fraud-flags/:id/resolve', async (req, res) => {
   const { data, error } = await c.from('fraud_flags').update({ resolved: true }).eq('id', req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
+});
+
+// Listing Moderation (products & services)
+router.get('/listings/pending', async (req, res) => {
+  const c = authedClient(req);
+  const [products, services] = await Promise.all([
+    c.from('products').select('*').eq('status', 'pending').order('created_at', { ascending: false }),
+    c.from('services').select('*').eq('status', 'pending').order('created_at', { ascending: false })
+  ]);
+  res.json({ products: products.data || [], services: services.data || [] });
+});
+
+router.get('/listings/all', async (req, res) => {
+  const c = authedClient(req);
+  const [products, services] = await Promise.all([
+    c.from('products').select('*').order('created_at', { ascending: false }),
+    c.from('services').select('*').order('created_at', { ascending: false })
+  ]);
+  res.json({ products: products.data || [], services: services.data || [] });
+});
+
+router.put('/listings/:type/:id/status', async (req, res) => {
+  const { type, id } = req.params;
+  if (!['products', 'services'].includes(type)) return res.status(400).json({ error: 'Invalid listing type' });
+  const { status, reason } = req.body;
+  if (!['active', 'rejected', 'paused', 'deleted'].includes(status)) return res.status(400).json({ error: 'Invalid status' });
+  const c = authedClient(req);
+  const { data, error } = await c.from(type).update({ status }).eq('id', id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  const labels = { active: 'approved and is now live', rejected: 'rejected', paused: 'paused', deleted: 'discontinued' };
+  if (data) {
+    await notify(c, {
+      userId: data.user_id, type: `listing_${status}`, title: `Listing ${status}`,
+      body: reason ? `"${data.title}" was ${labels[status]}. Reason: ${reason}` : `"${data.title}" was ${labels[status]}.`,
+      link: '/dashboard.html'
+    });
+  }
+  res.json(data);
+});
+
+// Broadcast messaging — real notification to every account, or a role subset
+router.post('/broadcast', async (req, res) => {
+  const c = authedClient(req);
+  const { title, body, target_role } = req.body;
+  if (!title || !body) return res.status(400).json({ error: 'Title and message are required.' });
+
+  let q = c.from('profiles').select('user_id');
+  if (target_role && target_role !== 'all') q = q.eq('role', target_role);
+  const { data: targets, error } = await q;
+  if (error) return res.status(400).json({ error: error.message });
+
+  let sent = 0;
+  for (const t of targets || []) {
+    await notify(c, { userId: t.user_id, type: 'announcement', title, body, link: '/dashboard.html' });
+    sent++;
+  }
+  res.json({ sent });
 });
 
 // Site Content (CMS-style key/value blocks)
