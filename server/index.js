@@ -55,7 +55,7 @@ window.SUPABASE_ANON_KEY = ${JSON.stringify(ANON_KEY || '')};
 (function () {
   if (window.supabase) return;
   const s = document.createElement('script');
-  s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase-js.min.js';
+  s.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
   s.async = false;
   document.head.appendChild(s);
 })();`
