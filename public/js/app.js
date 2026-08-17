@@ -9,14 +9,14 @@ function initSb() {
   if (sb) return Promise.resolve(sb);
   if (sbInitPromise) return sbInitPromise;
   sbInitPromise = new Promise((resolve) => {
-    if (window.supabaseJs && SUPABASE_URL && SUPABASE_ANON_KEY) {
-      sb = window.supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    if (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY) {
+      sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
       return resolve(sb);
     }
     const check = setInterval(() => {
-      if (window.supabaseJs && SUPABASE_URL && SUPABASE_ANON_KEY) {
+      if (window.supabase && SUPABASE_URL && SUPABASE_ANON_KEY) {
         clearInterval(check);
-        sb = window.supabaseJs.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         resolve(sb);
       }
     }, 100);
