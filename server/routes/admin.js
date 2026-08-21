@@ -45,6 +45,10 @@ router.get('/users', async (req, res) => {
 router.put('/users/:id', async (req, res) => {
   const c = authedClient(req);
   const { reason, ...updates } = req.body;
+  if (updates.role !== undefined) {
+    const { data: role } = await c.from('platform_roles').select('role_key').eq('role_key', updates.role).maybeSingle();
+    if (!role) return res.status(400).json({ error: 'Choose a configured platform role.' });
+  }
   const { data, error } = await c.from('profiles').update(updates).eq('user_id', req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
   if (data && updates.account_status && updates.account_status !== 'active') {
@@ -495,9 +499,47 @@ router.put('/plans/:id', async (req, res) => {
 
 router.delete('/plans/:id', async (req, res) => {
   const c = authedClient(req);
-  const { error } = await c.from('subscription_plans').update({ is_active: false }).eq('id', req.params.id);
+  const { data: plan, error: lookupError } = await c.from('subscription_plans').select('is_active').eq('id', req.params.id).maybeSingle();
+  if (lookupError) return res.status(400).json({ error: lookupError.message });
+  if (!plan) return res.status(404).json({ error: 'Plan not found.' });
+  if (plan.is_active) return res.status(400).json({ error: 'Deactivate the plan before deleting it.' });
+  const { error } = await c.from('subscription_plans').delete().eq('id', req.params.id);
   if (error) return res.status(400).json({ error: error.message });
   res.json({ ok: true });
+});
+
+// Site builder: centrally enable pages/features and maintain custom role definitions.
+router.get('/builder/features', async (req, res) => {
+  const { data, error } = await authedClient(req).from('platform_features').select('*').order('feature_key');
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+router.put('/builder/features/:key', async (req, res) => {
+  const c = authedClient(req);
+  const { enabled, configuration } = req.body || {};
+  const { data, error } = await c.from('platform_features').upsert({ feature_key: req.params.key, enabled: enabled !== false, configuration: configuration || {}, updated_by: req.user.id, updated_at: new Date().toISOString() }, { onConflict: 'feature_key' }).select().single();
+  if (error) return res.status(400).json({ error: error.message }); res.json(data);
+});
+router.get('/builder/roles', async (req, res) => {
+  const { data, error } = await authedClient(req).from('platform_roles').select('*').order('name');
+  if (error) return res.status(400).json({ error: error.message }); res.json(data || []);
+});
+router.post('/builder/roles', async (req, res) => {
+  const { role_key, name, description, permissions } = req.body || {};
+  if (!role_key || !name) return res.status(400).json({ error: 'Role key and name are required.' });
+  const { data, error } = await authedClient(req).from('platform_roles').insert({ role_key, name, description: description || null, permissions: Array.isArray(permissions) ? permissions : [] }).select().single();
+  if (error) return res.status(400).json({ error: error.message }); res.json(data);
+});
+router.put('/builder/roles/:id', async (req, res) => {
+  const { name, description, permissions } = req.body || {};
+  const { data, error } = await authedClient(req).from('platform_roles').update({ name, description: description || null, permissions: Array.isArray(permissions) ? permissions : [] }).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message }); res.json(data);
+});
+router.delete('/builder/roles/:id', async (req, res) => {
+  const c = authedClient(req); const { data: role } = await c.from('platform_roles').select('is_system').eq('id', req.params.id).maybeSingle();
+  if (!role) return res.status(404).json({ error: 'Role not found.' });
+  if (role.is_system) return res.status(400).json({ error: 'System roles cannot be deleted.' });
+  const { error } = await c.from('platform_roles').delete().eq('id', req.params.id); if (error) return res.status(400).json({ error: error.message }); res.json({ ok: true });
 });
 
 // Ads
@@ -546,7 +588,12 @@ router.get('/settings', async (req, res) => {
 
 router.put('/settings', async (req, res) => {
   const c = authedClient(req);
-  const { data, error } = await c.from('platform_settings').update(req.body).select().single();
+  const { data: existing, error: lookupError } = await c.from('platform_settings').select('id').limit(1).maybeSingle();
+  if (lookupError) return res.status(400).json({ error: lookupError.message });
+  const query = existing
+    ? c.from('platform_settings').update(req.body).eq('id', existing.id)
+    : c.from('platform_settings').insert(req.body);
+  const { data, error } = await query.select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
