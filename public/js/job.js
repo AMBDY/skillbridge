@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <img src="${client.profile_image || 'https://images.pexels.com/photos/3777943/pexels-photo-3777943.jpeg'}" style="width:48px;height:48px;border-radius:50%;object-fit:cover">
         <div style="flex:1"><div style="font-weight:500">${client.display_name}</div>
         <div class="card-meta"><span class="stars">${stars(client.rating)}</span>${client.kyc_level >= 3 ? '<span class="badge badge-verified">✓ KYC</span>' : ''}</div></div>
-        <a href="/chat.html?to=${client.user_id}" class="btn btn-outline btn-sm">💬 Chat</a>
+        <a href="/chat.html?to=${client.user_id}&job=${job.id}" class="btn btn-outline btn-sm">💬 Chat</a>
       </div>
     </div>
 
