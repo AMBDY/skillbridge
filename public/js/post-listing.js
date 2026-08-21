@@ -25,11 +25,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   const imagesInput = document.getElementById('imagesInput');
   const imagesPreview = document.getElementById('imagesPreview');
   imagesInput.addEventListener('change', async () => {
-    const files = Array.from(imagesInput.files);
+    // Copy File objects before resetting the picker.  Some browsers clear the
+    // live FileList as soon as the picker is reset, which previously made the
+    // form report “add at least one image” after a successful upload.
+    const files = [...imagesInput.files];
     if (!files.length) return;
     Toast.show('Uploading images...');
     try {
-      for (const file of files) uploadedImages.push(await Upload.file(file));
+      const urls = await Promise.all(files.map(file => Upload.file(file)));
+      uploadedImages = [...uploadedImages, ...urls.filter(Boolean)];
+      if (!uploadedImages.length) throw new Error('No image URL was returned. Please try the upload again.');
       renderImages();
       Toast.show('Images uploaded');
     } catch (e) { Toast.show(e.message); }
