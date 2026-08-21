@@ -15,6 +15,7 @@ const paymentRoutes = require('./routes/payments');
 const adminRoutes = require('./routes/admin');
 const aiRoutes = require('./routes/ai');
 const recruitmentRoutes = require('./routes/recruitment');
+const agreementRoutes = require('./routes/agreements');
 const uploadRoutes = require('./routes/uploads');
 const supportRoutes = require('./routes/support');
 const disputeRoutes = require('./routes/disputes');
@@ -90,6 +91,20 @@ app.use('/api', async (req, res, next) => {
   if (await isMaintenanceMode()) return res.status(503).json({ error: 'SkillBridge is temporarily down for maintenance. Please check back soon.' });
   next();
 });
+let featureCache = { disabled: new Set(), checkedAt: 0 };
+async function disabledFeatures() {
+  if (Date.now() - featureCache.checkedAt < 30000) return featureCache.disabled;
+  const { data } = await supabase.from('platform_features').select('feature_key').eq('enabled', false);
+  featureCache = { disabled: new Set((data || []).map(row => row.feature_key)), checkedAt: Date.now() };
+  return featureCache.disabled;
+}
+app.use('/api', async (req, res, next) => {
+  if (req.path.startsWith('/admin') || req.path.startsWith('/auth') || req.path === '/health') return next();
+  const map = [['/recruitment','recruitment'],['/chat','chat'],['/payments','payments'],['/agreements','agreements'],['/support','support'],['/marketplace/products','shop'],['/marketplace/services','hire']];
+  const found = map.find(([prefix]) => req.path.startsWith(prefix));
+  if (found && (await disabledFeatures()).has(found[1])) return res.status(503).json({ error: `The ${found[1]} feature is currently unavailable.` });
+  next();
+});
 app.use('/api/auth', authRoutes);
 app.use('/api/marketplace', marketplaceRoutes);
 app.use('/api/jobs', jobRoutes);
@@ -98,6 +113,7 @@ app.use('/api/payments', paymentRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/ai', aiRoutes);
 app.use('/api/recruitment', recruitmentRoutes);
+app.use('/api/agreements', agreementRoutes);
 app.use('/api/uploads', uploadRoutes);
 app.use('/api/support', supportRoutes);
 app.use('/api/disputes', disputeRoutes);
@@ -226,6 +242,7 @@ const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
   console.log(`SkillBridge running on port ${PORT}`);
   require('./jobs/backup-scheduler').startBackupScheduler();
+  require('./jobs/agreement-archive-scheduler').startAgreementArchiveScheduler();
 });
 
 module.exports = app;
