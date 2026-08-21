@@ -67,6 +67,8 @@ window.toggleRecruitmentForm = function () {
               <div class="form-group"><label class="form-label">Company Name</label><input class="form-input" name="company_name" required></div>
             </div>
 
+            <div class="form-group"><label class="form-label">Manual screening questions (one per line)</label><textarea class="form-textarea" name="manual_questions" rows="4" placeholder="Why are you suited to this role?&#10;Describe relevant experience."></textarea></div>
+
             <details class="card" style="margin:12px 0;padding:12px"><summary style="cursor:pointer;font-weight:600">Application requirements</summary>
               <p style="color:var(--text-muted);font-size:.9rem;margin:8px 0">Choose exactly what applicants must complete for this job. These choices are saved with this job only.</p>
               <div class="grid grid-2">${APPLICATION_FIELDS.map(([key, label, type]) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" class="application-field" data-key="${key}" data-label="${label}" data-type="${type}"> ${label}</label>`).join('')}</div>
@@ -146,6 +148,8 @@ async function submitRecruitmentJob(e) {
   data.application_fields = Array.from(e.target.querySelectorAll('.application-field:checked')).map(input => ({
     key: input.dataset.key, label: input.dataset.label, type: input.dataset.type, required: true
   }));
+  data.questions = String(data.manual_questions || '').split('\n').map(question => question.trim()).filter(Boolean).map(question => ({ question, duration_limit: 120, attempts_allowed: 1 }));
+  delete data.manual_questions;
 
   try {
     const editId = e.target.dataset.editId;
