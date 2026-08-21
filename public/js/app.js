@@ -178,7 +178,7 @@ const Upload = {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Upload failed');
     return data.url;
-   },
+  },
   async remove(url) {
     const token = Auth.getToken();
     const res = await fetch('/api/uploads', { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ url }) });
@@ -287,7 +287,8 @@ function renderNav() {
             </span>
           </a>
           <a href="/chat.html" class="icon-btn" title="Messages">💬</a>
-          <a href="${recruitHref}" class="btn btn-outline btn-sm">Job Recruitment</a>
+           <a href="${recruitHref}" class="btn btn-outline btn-sm">Job Recruitment</a>
+           <a href="/agreements.html" class="btn btn-outline btn-sm">Agreements</a>
           <a href="/dashboard.html" class="btn btn-outline btn-sm">Dashboard</a>
           ${user && user.role === 'admin' ? '<a href="/admin.html" class="btn btn-gold btn-sm">Admin</a>' : ''}
           <button class="btn btn-primary btn-sm js-logout">Sign out</button>
