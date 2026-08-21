@@ -264,7 +264,9 @@ function timeAgo(date) {
 }
 
 let siteSettings = { site_name: 'SkillBridge', logo_url: null };
+let enabledPlatformFeatures = null;
 API.get('/marketplace/settings').then(s => { siteSettings = s; if (document.getElementById('navbar')) renderNav(); if (document.getElementById('footer')) renderFooter(); }).catch(() => {});
+API.get('/marketplace/features').then(features => { enabledPlatformFeatures = new Map(features.map(f => [f.feature_key, f.enabled])); if (document.getElementById('navbar')) renderNav(); }).catch(() => {});
 
 function renderNav() {
   const nav = document.getElementById('navbar');
@@ -275,6 +277,7 @@ function renderNav() {
     ? `<img src="${siteSettings.logo_url}" alt="${siteSettings.site_name}" style="height:32px">`
     : (siteSettings.site_name === 'SkillBridge' ? 'Skill<span>Bridge</span>' : (siteSettings.site_name || 'SkillBridge'));
   const recruitHref = (user && ['client', 'admin'].includes(user.role)) ? '/recruiter-jobs.html' : '/recruitment-jobs.html';
+  const featureEnabled = key => !enabledPlatformFeatures || enabledPlatformFeatures.get(key) !== false;
   const roleLabels = { client: 'Client', freelancer: 'Freelancer', worker: 'Worker', seller: 'Seller', admin: 'Superadmin' };
   const authLinks = logged ? `
           <a href="/profile.html?id=${user?.user_id}" class="nav-identity" style="display:flex;align-items:center;gap:8px;text-decoration:none;color:inherit;padding:4px 10px;border-radius:20px;background:var(--bg-elev)">
@@ -287,8 +290,8 @@ function renderNav() {
             </span>
           </a>
           <a href="/chat.html" class="icon-btn" title="Messages">💬</a>
-           <a href="${recruitHref}" class="btn btn-outline btn-sm">Job Recruitment</a>
-           <a href="/agreements.html" class="btn btn-outline btn-sm">Agreements</a>
+           ${featureEnabled('recruitment') ? `<a href="${recruitHref}" class="btn btn-outline btn-sm">Job Recruitment</a>` : ''}
+           ${featureEnabled('agreements') ? '<a href="/agreements.html" class="btn btn-outline btn-sm">Agreements</a>' : ''}
           <a href="/dashboard.html" class="btn btn-outline btn-sm">Dashboard</a>
           ${user && user.role === 'admin' ? '<a href="/admin.html" class="btn btn-gold btn-sm">Admin</a>' : ''}
           <button class="btn btn-primary btn-sm js-logout">Sign out</button>
