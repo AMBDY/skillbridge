@@ -46,11 +46,20 @@ router.get('/admin', async (req, res) => {
 router.post('/', async (req, res) => {
   const c = client(req);
   const body = req.body || {};
+  if (!['client', 'seller', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Only the client, listing seller, or administrator can create an agreement.' });
   if (!body.title || !body.worker_id || !body.price) return res.status(400).json({ error: 'Title, worker, and price are required.' });
+  if (body.job_id && req.user.role !== 'admin') {
+    const { data: job } = await c.from('jobs').select('user_id').eq('id', body.job_id).maybeSingle();
+    if (!job || job.user_id !== req.user.id) return res.status(403).json({ error: 'Only the job poster can create this job agreement.' });
+  }
+  if (body.source_listing_id && req.user.role !== 'admin') {
+    const { data: product } = await c.from('products').select('user_id').eq('id', body.source_listing_id).maybeSingle();
+    if (!product || product.user_id !== req.user.id) return res.status(403).json({ error: 'Only the listing seller can create this product agreement.' });
+  }
   const number = `AGR-${new Date().getFullYear()}-${String(Date.now()).slice(-6)}`;
   const { data: agreement, error } = await c.from('agreements').insert({
     job_id: body.job_id || null, client_id: req.user.id, worker_id: body.worker_id, title: body.title,
-    agreement_number: number, agreement_type: body.agreement_type || 'service', details: body.details || {},
+    agreement_number: number, agreement_type: body.agreement_type || 'service', details: { ...(body.details || {}), source_listing_id: body.source_listing_id || null },
     price: Number(body.price), timeline: body.timeline || null, status: 'submitted', locked: false, sealed: false
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
@@ -58,6 +67,10 @@ router.post('/', async (req, res) => {
   const { error: partyError } = await c.from('agreement_parties').insert(parties.map(p => ({ agreement_id: agreement.id, user_id: p.user_id || null, party_name: p.party_name || 'Additional party', party_role: p.party_role || 'party', required: p.required !== false })));
   if (partyError) return res.status(400).json({ error: partyError.message });
   await audit(c, agreement.id, req.user.id, 'submitted', 'draft', 'submitted');
+  if (body.conversation_id) {
+    const { data: conversation } = await c.from('chat_conversations').select('id').eq('id', body.conversation_id).or(`user_a.eq.${req.user.id},user_b.eq.${req.user.id}`).maybeSingle();
+    if (conversation) await c.from('chat_messages').insert({ conversation_id: conversation.id, sender_id: req.user.id, body: `Agreement submitted: ${agreement.title}. It is awaiting administrator review.`, message_type: 'contract', file_url: '/agreements.html' });
+  }
   await notify(c, { userId: body.worker_id, type: 'agreement_submitted', title: 'Agreement requires review', body: `${body.title} was submitted for review.`, link: '/agreements.html' });
   res.json(agreement);
 });
@@ -81,6 +94,7 @@ router.put('/:id/respond', async (req, res) => {
   const { data: agreement } = await c.from('agreements').select('*').eq('id', req.params.id).maybeSingle();
   if (!agreement) return res.status(404).json({ error: 'Agreement not found.' });
   if (agreement.status !== 'awaiting_acceptance') return res.status(400).json({ error: 'This agreement is not awaiting acceptance.' });
+  if (agreement.client_id === req.user.id) return res.status(403).json({ error: 'The agreement creator cannot accept, decline, or edit their own submitted agreement.' });
   const values = accept ? { accepted_at: new Date().toISOString(), declined_at: null, response_note: note || null } : { declined_at: new Date().toISOString(), accepted_at: null, response_note: note || null };
   const { error } = await c.from('agreement_parties').update(values).eq('agreement_id', agreement.id).eq('user_id', req.user.id);
   if (error) return res.status(400).json({ error: error.message });
