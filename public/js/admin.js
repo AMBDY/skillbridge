@@ -157,16 +157,22 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadJobs() {
     const jobs = await API.get('/admin/jobs');
+    const activeJobs = jobs.filter(j => j.status !== 'deleted_by_owner');
+    const deletedJobs = jobs.filter(j => j.status === 'deleted_by_owner');
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Job Moderation</h1>
+      <p class="section-sub">Rejected jobs are removed after their rejection notice is sent. Jobs deleted by their poster remain below for administrator review or permanent removal.</p>
       <table class="table" style="margin-top:24px"><thead><tr><th>Title</th><th>Client</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-      ${jobs.map(j => `<tr><td>${j.title}</td><td>${j.profiles?.display_name || ''}</td><td><span class="badge badge-kyc">${j.status}</span></td>
+      ${activeJobs.map(j => `<tr><td>${j.title}</td><td>${j.profiles?.display_name || ''}</td><td><span class="badge badge-kyc">${j.status}</span></td>
         <td>
           <button class="btn btn-outline btn-sm" onclick="viewJobDetail('${j.id}')">View</button>
           <button class="btn btn-gold btn-sm" onclick="setJobStatus('${j.id}','approved')">Approve</button>
+          <button class="btn btn-outline btn-sm" onclick="editJobAdmin('${j.id}')">Edit</button>
           <button class="btn btn-outline btn-sm" onclick="rejectJob('${j.id}')">Reject</button>
         </td></tr>`).join('')}
       </tbody></table>
+      <h3 style="margin-top:28px">Deleted by Poster (${deletedJobs.length})</h3>
+      ${deletedJobs.length ? `<table class="table"><thead><tr><th>Title</th><th>Poster</th><th>Actions</th></tr></thead><tbody>${deletedJobs.map(j => `<tr><td>${j.title}</td><td>${j.profiles?.display_name || ''}</td><td><button class="btn btn-outline btn-sm" onclick="viewJobDetail('${j.id}')">View</button><button class="btn btn-outline btn-sm" onclick="editJobAdmin('${j.id}')">Edit / Repost</button><button class="btn btn-outline btn-sm" onclick="purgeJob('${j.id}')">Delete permanently</button></td></tr>`).join('')}</tbody></table>` : '<p style="color:var(--text-muted)">No poster-deleted jobs.</p>'}
       <div id="jobDetailBox" style="margin-top:20px"></div>`;
     window.__jobsCache = jobs;
   }
@@ -185,6 +191,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div></div>`;
   };
   window.setJobStatus = async (id, status) => { await API.put(`/admin/jobs/${id}/status`, { status }); Toast.show('Job ' + status); load('jobs'); };
+  window.editJobAdmin = async id => {
+    const j = (window.__jobsCache || []).find(x => x.id === id); if (!j) return;
+    const title = prompt('Job title', j.title); if (title === null) return;
+    const description = prompt('Job description', j.description || ''); if (description === null) return;
+    try { await API.put(`/admin/jobs/${id}`, { title, description }); Toast.show('Job updated'); load('jobs'); } catch (e) { Toast.show(e.message); }
+  };
+  window.purgeJob = async id => { if (!confirm('Permanently delete this archived job and its stored images?')) return; try { await API.del(`/admin/jobs/${id}`); Toast.show('Job permanently deleted'); load('jobs'); } catch (e) { Toast.show(e.message); } };
   window.rejectJob = (id) => {
     promptReason('Reject Job', async (reason) => {
       await API.put(`/admin/jobs/${id}/status`, { status: 'cancelled', reason });
@@ -292,6 +305,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           </select>
         </div>
         <div class="form-group"><label class="form-label">Message</label><textarea class="form-textarea" id="directBody" rows="3"></textarea></div>
+        <div class="form-group"><label class="form-label">Image or video attachment (optional)</label><input class="form-input" type="file" id="directMedia" accept="image/*,video/*"></div>
         <button class="btn btn-gold btn-sm" onclick="sendDirectMessage()">Send Message</button>
         <div id="directResult" style="margin-top:10px;font-size:0.85rem;color:var(--text-muted)"></div>
       </div></div>`;
@@ -313,15 +327,19 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.sendDirectMessage = async () => {
     const userId = document.getElementById('directUserSelect').value;
     const body = document.getElementById('directBody').value.trim();
+    const file = document.getElementById('directMedia').files[0];
     if (!userId) return Toast.show('Select a user first');
-    if (!body) return Toast.show('Write a message first');
+    if (!body && !file) return Toast.show('Write a message or choose media first');
     const resEl = document.getElementById('directResult');
     resEl.textContent = 'Sending...';
     try {
       const conv = await API.post('/chat/conversations', { other_user_id: userId });
-      await API.post(`/chat/conversations/${conv.id}/messages`, { body, message_type: 'text' });
+      const file_url = file ? await Upload.file(file) : null;
+      const message_type = file ? (file.type.startsWith('video/') ? 'video' : 'image') : 'text';
+      await API.post(`/chat/conversations/${conv.id}/messages`, { body, message_type, file_url });
       resEl.textContent = 'Sent — visible in their Messages inbox.';
       document.getElementById('directBody').value = '';
+      document.getElementById('directMedia').value = '';
     } catch (e) { resEl.textContent = 'Error: ' + e.message; }
   };
 
@@ -388,10 +406,11 @@ document.addEventListener('DOMContentLoaded', async () => {
       <h1 class="section-title">Disputes</h1>
       ${d.length ? d.map(x => `<div class="card" style="margin-top:16px"><div class="card-body">
         <strong>${x.reason}</strong><br><span style="font-size:0.85rem;color:var(--text-muted)">${x.status} • ${timeAgo(x.created_at)}</span>
-        <div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-gold btn-sm" onclick="resolveDispute('${x.id}','resolved')">Resolve</button><button class="btn btn-outline btn-sm" onclick="resolveDispute('${x.id}','dismissed')">Dismiss</button></div>
+        <div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-gold btn-sm" onclick="resolveDispute('${x.id}','resolved')">Resolve</button><button class="btn btn-outline btn-sm" onclick="resolveDispute('${x.id}','dismissed')">Dismiss</button><button class="btn btn-outline btn-sm" onclick="deleteDispute('${x.id}')">Delete</button></div>
       </div></div>`).join('') : '<p style="color:var(--text-muted);margin-top:24px">No disputes.</p>'}`;
   }
   window.resolveDispute = async (id, status) => { await API.put(`/admin/disputes/${id}`, { status }); Toast.show('Dispute ' + status); load('disputes'); };
+  window.deleteDispute = async id => { if (!confirm('Delete this dispute?')) return; try { await API.del(`/admin/disputes/${id}`); Toast.show('Dispute deleted'); load('disputes'); } catch(e) { Toast.show(e.message); } };
 
   async function loadPayments() {
     const p = await API.get('/admin/payments');
@@ -615,7 +634,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ${posts.length ? posts.map(p => `<div class="card" style="margin-bottom:10px"><div class="card-body" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px">
           <div><strong>${p.title}</strong> <span class="badge badge-kyc">${p.status}</span><div class="card-meta">${new Date(p.created_at).toLocaleDateString()}</div></div>
           <div style="display:flex;gap:8px">
-            <button class="btn btn-outline btn-sm" onclick='showBlogForm(${JSON.stringify(p).replace(/'/g, "&apos;")})'>Edit</button>
+            <a class="btn btn-outline btn-sm" href="/blog-post.html?slug=${p.slug}" target="_blank">View</a><button class="btn btn-outline btn-sm" onclick='showBlogForm(${JSON.stringify(p).replace(/'/g, "&apos;")})'>Edit</button>
             <button class="btn btn-outline btn-sm" onclick="deleteBlogPost('${p.id}')">Delete</button>
           </div>
         </div></div>`).join('') : '<p style="color:var(--text-muted)">No posts yet.</p>'}
@@ -950,12 +969,14 @@ document.addEventListener('DOMContentLoaded', async () => {
           <div style="display:flex;gap:8px">
             ${c.status !== 'read' ? `<button class="btn btn-outline btn-sm" onclick="setCommentStatus('${c.id}','read')">Mark Read</button>` : ''}
             ${c.status !== 'archived' ? `<button class="btn btn-outline btn-sm" onclick="setCommentStatus('${c.id}','archived')">Archive</button>` : ''}
+            <button class="btn btn-outline btn-sm" onclick="deleteComment('${c.id}')">Delete</button>
           </div>
         </div>
         <p style="margin-top:8px;color:var(--text-soft)">${c.body}</p>
       </div></div>`).join('') : '<p style="color:var(--text-muted);margin-top:20px">No comments yet.</p>'}`;
   }
   window.setCommentStatus = async (id, status) => { await API.put(`/admin/comments/${id}`, { status }); Toast.show('Updated'); load('comments'); };
+  window.deleteComment = async id => { if (!confirm('Delete this comment?')) return; try { await API.del(`/admin/comments/${id}`); Toast.show('Comment deleted'); load('comments'); } catch(e) { Toast.show(e.message); } };
 
   // Support Tickets
   async function loadSupportTickets() {
@@ -970,11 +991,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             <select class="form-select" style="padding:4px 8px;font-size:0.85rem" onchange="setTicketStatus('${t.id}', this.value)">
               ${['open','in_progress','resolved','closed'].map(s => `<option value="${s}" ${t.status === s ? 'selected' : ''}>${s}</option>`).join('')}
             </select>
+            <button class="btn btn-outline btn-sm" onclick="deleteSupportTicket('${t.id}')">Delete</button>
           </div>
         </div></div>`).join('') : '<p style="color:var(--text-muted)">No tickets.</p>'}</div>
       <div id="adminTicketThread" style="margin-top:24px"></div>`;
   }
   window.setTicketStatus = async (id, status) => { await API.put(`/admin/support/tickets/${id}`, { status }); Toast.show('Status updated'); load('support'); };
+  window.deleteSupportTicket = async id => { if (!confirm('Delete this support ticket and its messages?')) return; try { await API.del(`/admin/support/tickets/${id}`); Toast.show('Ticket deleted'); load('support'); } catch(e) { Toast.show(e.message); } };
   window.openAdminTicket = async (id) => {
     const { ticket, messages } = await API.get(`/admin/support/tickets/${id}`);
     document.getElementById('adminTicketThread').innerHTML = `
@@ -1123,8 +1146,9 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="card"><div class="card-body">
           <h3>General</h3>
           <div class="form-group"><label class="form-label">Site name</label><input class="form-input" value="${s?.site_name || 'SkillBridge'}" id="setSiteName"></div>
-          <div class="form-group"><label class="form-label">Logo URL</label><input class="form-input" value="${s?.logo_url || ''}" id="setLogo"></div>
-          <div class="form-group"><label class="form-label">Favicon URL</label><input class="form-input" value="${s?.favicon_url || ''}" id="setFavicon"></div>
+          <div class="form-group"><label class="form-label">Logo URL</label><input class="form-input" value="${s?.logo_url || ''}" id="setLogo"><label class="form-label" style="margin-top:8px">or upload logo</label><input class="form-input" type="file" id="setLogoFile" accept="image/*"></div>
+          <div class="form-group"><label class="form-label">Favicon URL</label><input class="form-input" value="${s?.favicon_url || ''}" id="setFavicon"><label class="form-label" style="margin-top:8px">or upload favicon</label><input class="form-input" type="file" id="setFaviconFile" accept="image/*,.ico"></div>
+          <p style="font-size:.82rem;color:var(--text-muted)">Maintenance mode blocks all non-admin API activity with a temporary-maintenance message. Administrators can still sign in and turn it off.</p>
           <div class="form-row">
             <div class="form-group"><label class="form-label">Default currency</label><input class="form-input" value="${s?.default_currency || 'NGN'}" id="setCurrency"></div>
             <div class="form-group"><label class="form-label">Default timezone</label><input class="form-input" value="${s?.default_timezone || 'Africa/Lagos'}" id="setTz"></div>
@@ -1180,10 +1204,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       </div></div>`;
   }
   window.saveGeneral = async () => {
+    const logoFile = document.getElementById('setLogoFile').files[0];
+    const faviconFile = document.getElementById('setFaviconFile').files[0];
+    const logo_url = logoFile ? await Upload.file(logoFile) : document.getElementById('setLogo').value;
+    const favicon_url = faviconFile ? await Upload.file(faviconFile) : document.getElementById('setFavicon').value;
     await API.put('/admin/settings', {
       site_name: document.getElementById('setSiteName').value,
-      logo_url: document.getElementById('setLogo').value,
-      favicon_url: document.getElementById('setFavicon').value,
+      logo_url, favicon_url,
       default_currency: document.getElementById('setCurrency').value,
       default_timezone: document.getElementById('setTz').value,
       maintenance_mode: document.getElementById('setMaint').checked,
@@ -1284,16 +1311,25 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function loadBuilder() {
     const [features, roles] = await Promise.all([API.get('/admin/builder/features'), API.get('/admin/builder/roles')]);
     const featureMap = new Map(features.map(f => [f.feature_key, f]));
-    document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Site Builder & Roles</h1><p class="section-sub">Enable pages and features, then maintain custom role permissions.</p><div class="card" style="margin-top:20px"><div class="card-body"><h3>Pages and features</h3>${BUILDER_FEATURES.map(([key,label]) => `<label style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span>${label}</span><input type="checkbox" class="builder-feature" data-key="${key}" ${featureMap.get(key)?.enabled !== false ? 'checked' : ''}></label>`).join('')}<button class="btn btn-gold btn-sm" style="margin-top:12px" onclick="saveBuilderFeatures()">Save feature access</button></div></div><div class="card" style="margin-top:20px"><div class="card-body"><h3>Custom roles</h3><div class="form-row"><div class="form-group"><label class="form-label">Role key</label><input class="form-input" id="builderRoleKey" placeholder="moderator"></div><div class="form-group"><label class="form-label">Role name</label><input class="form-input" id="builderRoleName" placeholder="Moderator"></div></div><div class="form-group"><label class="form-label">Description</label><input class="form-input" id="builderRoleDescription"></div><div class="form-group"><label class="form-label">Permissions (comma-separated)</label><input class="form-input" id="builderRolePermissions" placeholder="review_jobs, manage_content"></div><button class="btn btn-gold btn-sm" onclick="createBuilderRole()">Add role</button><div style="margin-top:16px">${roles.map(r => `<div class="card" style="padding:12px;margin-top:8px"><strong>${r.name}</strong> <span style="color:var(--text-muted)">${r.role_key}</span><p style="font-size:.9rem;color:var(--text-soft)">${r.description || ''}</p><p style="font-size:.82rem;color:var(--text-muted)">${(r.permissions || []).join(', ') || 'No permissions'}</p>${!r.is_system ? `<button class="btn btn-outline btn-sm" onclick="deleteBuilderRole('${r.id}')">Delete</button>` : ''}</div>`).join('') || '<p style="color:var(--text-muted)">No custom roles yet.</p>'}</div></div></div>`;
+    document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Site Builder & Roles</h1><p class="section-sub">Enable pages and features, then maintain custom role permissions.</p><div class="card" style="margin-top:20px"><div class="card-body"><h3>Pages and features</h3>${BUILDER_FEATURES.map(([key,label]) => `<label style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span>${label}</span><input type="checkbox" class="builder-feature" data-key="${key}" ${featureMap.get(key)?.enabled !== false ? 'checked' : ''}></label>`).join('')}<button class="btn btn-gold btn-sm" style="margin-top:12px" onclick="saveBuilderFeatures()">Save feature access</button></div></div><div class="card" style="margin-top:20px"><div class="card-body"><h3>Recruitment plan rules</h3><p style="color:var(--text-muted);font-size:.9rem">Choose the plans that require an immediate timed interview. This configuration controls the live application workflow.</p><textarea class="form-textarea" id="recruitmentPlanRules" rows="6">${JSON.stringify(featureMap.get('recruitment')?.configuration?.plans || { premium: { interview: true, minutes: 30 }, enterprise: { interview: true, minutes: 30 } }, null, 2)}</textarea><button class="btn btn-outline btn-sm" style="margin-top:8px" onclick="saveRecruitmentRules()">Save plan rules</button></div></div><div class="card" style="margin-top:20px"><div class="card-body"><h3>Custom roles</h3><div class="form-row"><div class="form-group"><label class="form-label">Role key</label><input class="form-input" id="builderRoleKey" placeholder="moderator"></div><div class="form-group"><label class="form-label">Role name</label><input class="form-input" id="builderRoleName" placeholder="Moderator"></div></div><div class="form-group"><label class="form-label">Description</label><input class="form-input" id="builderRoleDescription"></div><div class="form-group"><label class="form-label">Permissions (comma-separated)</label><input class="form-input" id="builderRolePermissions" placeholder="post_jobs, manage_content"></div><button class="btn btn-gold btn-sm" onclick="createBuilderRole()">Add role</button><div style="margin-top:16px">${roles.map(r => `<div class="card" style="padding:12px;margin-top:8px"><strong>${r.name}</strong> <span style="color:var(--text-muted)">${r.role_key}</span><p style="font-size:.9rem;color:var(--text-soft)">${r.description || ''}</p><p style="font-size:.82rem;color:var(--text-muted)">${(r.permissions || []).join(', ') || 'No permissions'}</p>${!r.is_system ? `<button class="btn btn-outline btn-sm" onclick="deleteBuilderRole('${r.id}')">Delete</button>` : ''}</div>`).join('') || '<p style="color:var(--text-muted)">No custom roles yet.</p>'}</div></div></div>`;
   }
   window.saveBuilderFeatures = async () => { try { await Promise.all(Array.from(document.querySelectorAll('.builder-feature')).map(el => API.put(`/admin/builder/features/${el.dataset.key}`, { enabled: el.checked }))); Toast.show('Site feature access saved'); } catch (e) { Toast.show(e.message); } };
+  window.saveRecruitmentRules = async () => {
+    try {
+      const plans = JSON.parse(document.getElementById('recruitmentPlanRules').value);
+      await API.put('/admin/builder/features/recruitment', { enabled: document.querySelector('.builder-feature[data-key="recruitment"]')?.checked !== false, configuration: { plans } });
+      Toast.show('Recruitment plan rules saved');
+    } catch (e) { Toast.show(e instanceof SyntaxError ? 'Plan rules must be valid JSON.' : e.message); }
+  };
   window.createBuilderRole = async () => { try { await API.post('/admin/builder/roles', { role_key: document.getElementById('builderRoleKey').value.trim().toLowerCase().replace(/\s+/g, '_'), name: document.getElementById('builderRoleName').value.trim(), description: document.getElementById('builderRoleDescription').value.trim(), permissions: document.getElementById('builderRolePermissions').value.split(',').map(x => x.trim()).filter(Boolean) }); Toast.show('Role created'); load('builder'); } catch (e) { Toast.show(e.message); } };
   window.deleteBuilderRole = async id => { if (!confirm('Delete this custom role?')) return; try { await API.del(`/admin/builder/roles/${id}`); load('builder'); } catch (e) { Toast.show(e.message); } };
   async function loadAgreements() {
     const [rows, archives] = await Promise.all([API.get('/agreements/admin'), API.get('/agreements/admin/archives')]);
-    document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Agreement Management</h1><p class="section-sub">Review submitted agreements, track acceptance, completion, and monthly archive records.</p><div class="card" style="margin-top:20px"><div class="card-body">${rows.length ? rows.map(a => `<div style="padding:14px 0;border-bottom:1px solid var(--border)"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><strong>${a.title}</strong><br><span style="font-size:.85rem;color:var(--text-muted)">${a.agreement_number} · ${a.status.replaceAll('_',' ')} · ${fmtPrice(a.price)}</span><p style="font-size:.85rem;color:var(--text-soft)">${a.admin_notes || ''}</p></div><div style="display:flex;gap:6px;align-items:start;flex-wrap:wrap">${['submitted','under_review'].includes(a.status) ? `<button class="btn btn-gold btn-sm" onclick="reviewAgreement('${a.id}','approve')">Approve & send</button><button class="btn btn-outline btn-sm" onclick="reviewAgreement('${a.id}','request_changes')">Request changes</button><button class="btn btn-outline btn-sm" onclick="reviewAgreement('${a.id}','reject')">Reject</button>` : ''}</div></div></div>`).join('') : '<p style="color:var(--text-muted)">No agreements waiting for review.</p>'}</div></div><div class="card" style="margin-top:20px"><div class="card-body"><h3>Monthly archives</h3><div class="form-row"><input class="form-input" type="month" id="archiveMonth"><button class="btn btn-outline" onclick="createAgreementArchive()">Create / refresh archive record</button></div>${archives.map(a => `<p>${a.archive_month}: ${a.agreement_count} completed agreements — ${new Date(a.created_at).toLocaleString()}</p>`).join('') || '<p style="color:var(--text-muted)">No archive records yet.</p>'}</div></div>`;
+    document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Agreement Management</h1><p class="section-sub">Review submitted agreements, track acceptance, completion, and monthly archive records.</p><div class="card" style="margin-top:20px"><div class="card-body">${rows.length ? rows.map(a => `<div style="padding:14px 0;border-bottom:1px solid var(--border)"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><strong>${a.title}</strong><br><span style="font-size:.85rem;color:var(--text-muted)">${a.agreement_number} · ${a.status.replaceAll('_',' ')} · ${fmtPrice(a.price)}</span><p style="font-size:.85rem;color:var(--text-soft)">${a.admin_notes || ''}</p></div><div style="display:flex;gap:6px;align-items:start;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="downloadAdminAgreementPdf('${a.id}','${a.agreement_number}')">PDF</button>${['submitted','under_review'].includes(a.status) ? `<button class="btn btn-gold btn-sm" onclick="reviewAgreement('${a.id}','approve')">Approve & send</button><button class="btn btn-outline btn-sm" onclick="reviewAgreement('${a.id}','request_changes')">Request changes</button><button class="btn btn-outline btn-sm" onclick="reviewAgreement('${a.id}','reject')">Reject</button>` : ''}</div></div></div>`).join('') : '<p style="color:var(--text-muted)">No agreements waiting for review.</p>'}</div></div><div class="card" style="margin-top:20px"><div class="card-body"><h3>Monthly archives</h3><div class="form-row"><input class="form-input" type="month" id="archiveMonth"><button class="btn btn-outline" onclick="createAgreementArchive()">Create / refresh archive record</button><button class="btn btn-gold" onclick="downloadAgreementArchive()">Download ZIP</button></div>${archives.map(a => `<p>${a.archive_month}: ${a.agreement_count} completed agreements — ${new Date(a.created_at).toLocaleString()}</p>`).join('') || '<p style="color:var(--text-muted)">No archive records yet.</p>'}</div></div>`;
   }
   window.reviewAgreement = async (id, action) => { const note = prompt(action === 'approve' ? 'Optional administrator note:' : 'Reason / requested changes:') || ''; try { await API.put(`/agreements/${id}/review`, { action, note }); Toast.show('Agreement updated'); load('agreements'); } catch(e) { Toast.show(e.message); } };
   window.createAgreementArchive = async () => { const m = document.getElementById('archiveMonth').value; if (!m) return Toast.show('Choose a month'); try { const result = await API.post(`/agreements/admin/archives/${m}`, {}); Toast.show(`Archive record saved (${result.agreements.length} agreements)`); load('agreements'); } catch(e) { Toast.show(e.message); } };
+  window.downloadAdminAgreementPdf = async (id, name) => { try { const r = await fetch(`/api/agreements/${id}/pdf`, { headers: { Authorization: `Bearer ${Auth.getToken()}` } }); if (!r.ok) throw new Error((await r.json()).error || 'PDF download failed'); const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = `${name || 'agreement'}.pdf`; a.click(); URL.revokeObjectURL(url); } catch(e) { Toast.show(e.message); } };
+  window.downloadAgreementArchive = async () => { const m = document.getElementById('archiveMonth').value; if (!m) return Toast.show('Choose a month'); try { const r = await fetch(`/api/agreements/admin/archives/${m}/download`, { headers: { Authorization: `Bearer ${Auth.getToken()}` } }); if (!r.ok) throw new Error((await r.json()).error || 'Archive download failed'); const url = URL.createObjectURL(await r.blob()); const a = document.createElement('a'); a.href = url; a.download = `AGREEMENTS-${m}.zip`; a.click(); URL.revokeObjectURL(url); } catch(e) { Toast.show(e.message); } };
   load('overview');
 });
