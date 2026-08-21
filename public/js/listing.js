@@ -47,7 +47,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
 
         <div style="display:flex;gap:10px;flex-wrap:wrap">
-          <a href="/chat.html?to=${seller.user_id}" class="btn btn-primary">💬 Chat</a>
+          <a href="/chat.html?to=${seller.user_id}&listing=${item.id}" class="btn btn-primary">💬 Chat</a>
           <button class="btn btn-outline" onclick="saveItem('${item.id}')">♡ Save</button>
           <button class="btn btn-outline" onclick="shareItem('${item.id}')">↗ Share</button>
           ${type === 'service' ? `<a href="/post-job.html?service=${id}" class="btn btn-gold">Hire now</a>` : `<button class="btn btn-gold" onclick="Toast.show('Added to cart (demo)')">Add to cart</button>`}
