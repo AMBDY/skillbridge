@@ -12,6 +12,7 @@ ALTER TABLE platform_features ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "admin_manage_platform_features" ON platform_features FOR ALL TO authenticated
   USING (public.is_admin()) WITH CHECK (public.is_admin());
 CREATE POLICY "public_read_enabled_platform_features" ON platform_features FOR SELECT TO anon, authenticated USING (enabled);
+CREATE POLICY "public_read_platform_feature_states" ON platform_features FOR SELECT TO anon, authenticated USING (true);
 
 CREATE TABLE IF NOT EXISTS platform_roles (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -37,6 +38,23 @@ CREATE POLICY "read_platform_roles" ON platform_roles FOR SELECT TO authenticate
 
 ALTER TABLE profiles ADD COLUMN IF NOT EXISTS profile_sections jsonb NOT NULL DEFAULT '{}'::jsonb;
 ALTER TABLE products ADD COLUMN IF NOT EXISTS details jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE recruitment_applications ADD COLUMN IF NOT EXISTS question_answers jsonb NOT NULL DEFAULT '{}'::jsonb;
+ALTER TABLE recruitment_applications ADD COLUMN IF NOT EXISTS interview_due_at timestamptz;
+ALTER TABLE recruitment_applications ADD COLUMN IF NOT EXISTS interview_status text NOT NULL DEFAULT 'not_required' CHECK (interview_status IN ('not_required','pending','completed','expired'));
+CREATE TABLE IF NOT EXISTS recruitment_interviews (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  application_id uuid NOT NULL UNIQUE REFERENCES recruitment_applications(id) ON DELETE CASCADE,
+  response_mode text NOT NULL CHECK (response_mode IN ('video','audio')),
+  response_url text NOT NULL,
+  submitted_at timestamptz NOT NULL DEFAULT now()
+);
+ALTER TABLE recruitment_interviews ENABLE ROW LEVEL SECURITY;
+CREATE POLICY "applicant_manage_own_interview" ON recruitment_interviews FOR ALL TO authenticated USING (
+  EXISTS (SELECT 1 FROM recruitment_applications a WHERE a.id = application_id AND a.applicant_id = auth.uid())
+) WITH CHECK (EXISTS (SELECT 1 FROM recruitment_applications a WHERE a.id = application_id AND a.applicant_id = auth.uid()));
+CREATE POLICY "recruiter_read_interviews" ON recruitment_interviews FOR SELECT TO authenticated USING (
+  EXISTS (SELECT 1 FROM recruitment_applications a JOIN recruitment_jobs j ON j.id = a.job_id WHERE a.id = application_id AND (j.recruiter_id = auth.uid() OR public.is_admin()))
+);
 
 ALTER TABLE agreements ADD COLUMN IF NOT EXISTS agreement_number text UNIQUE;
 ALTER TABLE agreements ADD COLUMN IF NOT EXISTS agreement_type text NOT NULL DEFAULT 'service';
@@ -114,6 +132,12 @@ CREATE INDEX IF NOT EXISTS idx_agreement_audit_agreement ON agreement_audit_log(
 DROP POLICY IF EXISTS "delete_own_kyc_uploads" ON storage.objects;
 CREATE POLICY "delete_own_kyc_uploads" ON storage.objects FOR DELETE TO authenticated
   USING (bucket_id = 'kyc' AND (storage.foldername(name))[1] = auth.uid()::text);
+
+INSERT INTO storage.buckets (id, name, public) VALUES ('agreement_archives', 'agreement_archives', false)
+ON CONFLICT (id) DO NOTHING;
+DROP POLICY IF EXISTS "admin_manage_agreement_archives_bucket" ON storage.objects;
+CREATE POLICY "admin_manage_agreement_archives_bucket" ON storage.objects FOR ALL TO authenticated
+  USING (bucket_id = 'agreement_archives' AND public.is_admin()) WITH CHECK (bucket_id = 'agreement_archives' AND public.is_admin());
 
 DROP POLICY IF EXISTS "delete_own_recruitment_jobs" ON recruitment_jobs;
 CREATE POLICY "delete_own_recruitment_jobs" ON recruitment_jobs FOR DELETE TO authenticated
