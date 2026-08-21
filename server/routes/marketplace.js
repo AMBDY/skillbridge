@@ -31,6 +31,12 @@ async function attachCategories(items, fk) {
 }
 
 // Categories
+router.get('/features', async (req, res) => {
+  const { data, error } = await supabase.from('platform_features').select('feature_key, enabled');
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
 router.get('/categories', async (req, res) => {
   const { ecosystem } = req.query;
   let q = supabase.from('categories').select('*').order('sort_order');
