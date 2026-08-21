@@ -291,7 +291,6 @@ function renderNav() {
           </a>
           <a href="/chat.html" class="icon-btn" title="Messages">💬</a>
            ${featureEnabled('recruitment') ? `<a href="${recruitHref}" class="btn btn-outline btn-sm">Job Recruitment</a>` : ''}
-           ${featureEnabled('agreements') ? '<a href="/agreements.html" class="btn btn-outline btn-sm">Agreements</a>' : ''}
           <a href="/dashboard.html" class="btn btn-outline btn-sm">Dashboard</a>
           ${user && user.role === 'admin' ? '<a href="/admin.html" class="btn btn-gold btn-sm">Admin</a>' : ''}
           <button class="btn btn-primary btn-sm js-logout">Sign out</button>
