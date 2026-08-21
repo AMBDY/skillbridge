@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { supabase, createAuthedClient } = require('../utils/db');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, hasPermission } = require('../middleware/auth');
 const { notify } = require('../utils/notify');
 
 function authedClient(req) {
@@ -73,7 +73,7 @@ router.get('/:id', async (req, res) => {
 
 // Create job
 router.post('/', authMiddleware, async (req, res) => {
-  if (!['client', 'admin'].includes(req.user.role)) {
+  if (!hasPermission(req, 'post_jobs') && !['client', 'admin'].includes(req.user.role)) {
     return res.status(403).json({ error: 'Only clients can post jobs.' });
   }
   const c = authedClient(req);
