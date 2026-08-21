@@ -43,7 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('myListings').innerHTML = listings.length ? listings.map(l => `
       <div class="card" style="margin-bottom:10px"><div class="card-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
         <div><div style="font-weight:500">${l.title}</div><div class="card-meta"><span>${l.type}</span><span>•</span><span>${fmtPrice(l.price || 0)}</span></div></div>
-        <span class="badge ${l.status === 'active' ? 'badge-verified' : l.status === 'rejected' ? '' : 'badge-kyc'}" style="${l.status === 'rejected' ? 'background:#fee2e2;color:#b91c1c' : ''}">${l.status}</span>
+        <div style="display:flex;gap:6px;align-items:start;flex-wrap:wrap"><span class="badge ${l.status === 'active' ? 'badge-verified' : l.status === 'rejected' ? '' : 'badge-kyc'}" style="${l.status === 'rejected' ? 'background:#fee2e2;color:#b91c1c' : ''}">${l.status}</span><a class="btn btn-outline btn-sm" href="/post-listing.html?edit=${l.id}&type=${l.type}">Edit / Replace</a><button class="btn btn-outline btn-sm" onclick="deleteListing('${l.type}','${l.id}')">Delete</button></div>
       </div></div>`).join('') : '<p style="color:var(--text-muted)">No listings yet.</p>';
   }).catch(() => { document.getElementById('myListings').innerHTML = '<p style="color:var(--text-muted)">Could not load listings.</p>'; });
 
@@ -57,7 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('myJobs').innerHTML = myJobs.length ? myJobs.map(j => `
     <div class="card" style="margin-bottom:10px"><div class="card-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
       <div><a href="/job.html?id=${j.id}" style="font-weight:500">${j.title}</a><div class="card-meta"><span>${j.status}</span><span>•</span><span>${fmtPrice(j.budget || 0)}</span></div></div>
-      <span class="badge badge-kyc">${j.status}</span>
+      <div style="display:flex;gap:6px;align-items:start;flex-wrap:wrap"><span class="badge badge-kyc">${j.status}</span>${j.user_id === user?.user_id ? `<a class="btn btn-outline btn-sm" href="/post-job.html?edit=${j.id}">Edit / Replace</a><button class="btn btn-outline btn-sm" onclick="deleteJob('${j.id}')">Delete</button>` : ''}</div>
     </div></div>`).join('') : '<p style="color:var(--text-muted)">No jobs yet.</p>';
 
   document.getElementById('myPayments').innerHTML = payments.length ? payments.map(p => `
@@ -81,4 +81,13 @@ window.markReceived = async function (id) {
     Toast.show('Marked as received! Admin will release funds.');
     setTimeout(() => location.reload(), 1000);
   } catch (e) { Toast.show(e.message); }
+};
+
+window.deleteJob = async function (id) {
+  if (!confirm('Delete this job and its post data? This cannot be undone.')) return;
+  try { await API.del(`/jobs/${id}`); Toast.show('Job deleted'); setTimeout(() => location.reload(), 500); } catch (e) { Toast.show(e.message); }
+};
+window.deleteListing = async function (type, id) {
+  if (!confirm('Delete this listing and its post data? This cannot be undone.')) return;
+  try { await API.del(`/marketplace/listings/${type}/${id}`); Toast.show('Listing deleted'); setTimeout(() => location.reload(), 500); } catch (e) { Toast.show(e.message); }
 };
