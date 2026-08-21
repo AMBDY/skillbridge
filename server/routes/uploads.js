@@ -31,4 +31,16 @@ router.post('/', authMiddleware, upload.single('file'), async (req, res) => {
   res.json({ url: pub.publicUrl, path });
 });
 
+router.delete('/', authMiddleware, async (req, res) => {
+  const url = String(req.body?.url || '');
+  const marker = '/storage/v1/object/public/kyc/';
+  const index = url.indexOf(marker);
+  if (index < 0) return res.status(400).json({ error: 'Only platform uploads can be removed.' });
+  const path = decodeURIComponent(url.slice(index + marker.length).split('?')[0]);
+  if (!path.startsWith(`${req.user.id}/`)) return res.status(403).json({ error: 'You can only remove your own uploads.' });
+  const { error } = await authedClient(req).storage.from('kyc').remove([path]);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
 module.exports = router;
