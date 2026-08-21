@@ -66,7 +66,8 @@ router.post('/jobs', authMiddleware, async (req, res) => {
     ai_plan: payload.ai_plan || 'basic',
     approval_status: 'pending',
     video_enabled: payload.video_enabled || 'disabled',
-    question_mode: payload.question_mode || 'manual'
+    question_mode: payload.question_mode || 'manual',
+    application_fields: Array.isArray(payload.application_fields) ? payload.application_fields : []
   };
 
   const { data: job, error } = await c.from('recruitment_jobs').insert(jobInsert).select().single();
@@ -99,6 +100,22 @@ router.get('/recruiter/jobs', authMiddleware, async (req, res) => {
   res.json(data || []);
 });
 
+router.put('/recruiter/jobs/:id', authMiddleware, async (req, res) => {
+  if (!isRecruiter(req.user.role)) return res.status(403).json({ error: 'Recruiter access required.' });
+  const c = authedClient(req);
+  const fields = ['title','company_name','description','responsibilities','required_skills','experience_required','education_requirement','salary','location','deadline','ai_plan','video_enabled','question_mode','application_fields'];
+  const changes = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => fields.includes(key)));
+  if (!Object.keys(changes).length) return res.status(400).json({ error: 'No editable job fields supplied.' });
+  const { data, error } = await c.from('recruitment_jobs').update({ ...changes, approval_status: 'pending' }).eq('id', req.params.id).eq('recruiter_id', req.user.id).select().single();
+  if (error) return res.status(400).json({ error: error.message }); res.json(data);
+});
+
+router.delete('/recruiter/jobs/:id', authMiddleware, async (req, res) => {
+  if (!isRecruiter(req.user.role)) return res.status(403).json({ error: 'Recruiter access required.' });
+  const { data, error } = await authedClient(req).from('recruitment_jobs').delete().eq('id', req.params.id).eq('recruiter_id', req.user.id).select().single();
+  if (error) return res.status(400).json({ error: error.message }); if (!data) return res.status(404).json({ error: 'Recruitment job not found.' }); res.json({ ok: true });
+});
+
 router.get('/recruiter/applicants', authMiddleware, async (req, res) => {
   if (!isRecruiter(req.user.role)) return res.status(403).json({ error: 'Recruiter access required.' });
   const c = authedClient(req);
@@ -122,9 +139,14 @@ router.post('/apply/:jobId', authMiddleware, async (req, res) => {
   }
 
   const payload = req.body || {};
+  const fields = Array.isArray(job.application_fields) ? job.application_fields : [];
+  const answers = payload.answers && typeof payload.answers === 'object' ? payload.answers : {};
+  const missingField = fields.find(field => field.required && !String(answers[field.key] || '').trim());
+  if (missingField) return res.status(400).json({ error: `${missingField.label || missingField.key} is required for this job.` });
   const { data: application, error } = await c.from('recruitment_applications').insert({
     job_id: job.id, applicant_id: req.user.id,
-    full_name: payload.full_name, email: payload.email, phone: payload.phone, cover_note: payload.cover_note
+    full_name: payload.full_name, email: payload.email, phone: payload.phone, cover_note: payload.cover_note,
+    application_data: answers
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
 
@@ -199,6 +221,17 @@ router.get('/admin/jobs', authMiddleware, async (req, res) => {
   const { data, error } = await c.from('recruitment_jobs').select('*').order('created_at', { ascending: false });
   if (error) return res.status(400).json({ error: error.message });
   res.json(data || []);
+});
+
+router.put('/admin/jobs/:id', authMiddleware, async (req, res) => {
+  if (!isAdmin(req.user.role)) return res.status(403).json({ error: 'Admin access required.' });
+  const c = authedClient(req);
+  const allowed = ['title', 'company_name', 'description', 'responsibilities', 'required_skills', 'experience_required', 'education_requirement', 'salary', 'location', 'deadline', 'ai_plan', 'video_enabled', 'question_mode', 'application_fields'];
+  const update = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => allowed.includes(key)));
+  if (!Object.keys(update).length) return res.status(400).json({ error: 'No editable job fields supplied.' });
+  const { data, error } = await c.from('recruitment_jobs').update(update).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data);
 });
 
 router.put('/admin/jobs/:id/status', authMiddleware, async (req, res) => {
