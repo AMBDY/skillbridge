@@ -1,100 +1,29 @@
-document.addEventListener('DOMContentLoaded', async () => {
-  if (!Auth.isLoggedIn()) { location.href = '/signin.html'; return; }
-  const user = Auth.user();
+document.addEventListener('DOMContentLoaded', () => {
+  if (!Auth.isLoggedIn()) return location.href = '/signin.html';
   const params = new URLSearchParams(location.search);
-  const workerId = params.get('worker');
-  const jobId = params.get('job');
+  const worker = params.get('worker');
+  const job = params.get('job');
+  const listing = params.get('listing');
+  const conversation = params.get('conv');
   const form = document.getElementById('agForm');
-
-  form.innerHTML = `
-    <div class="form-group"><label class="form-label">Job / Service details</label><textarea class="form-textarea" id="agDetails" placeholder="Describe deliverables, scope, requirements..."></textarea></div>
-    <div class="form-row">
-      <div class="form-group"><label class="form-label">Price (₦)</label><input class="form-input" type="number" id="agPrice" value="50000"></div>
-      <div class="form-group"><label class="form-label">Timeline</label><select class="form-select" id="agTimeline">
-        <option>3 days</option><option>5 days</option><option>1 week</option><option>2 weeks</option><option>1 month</option>
-      </select></div>
-    </div>
-    <div class="form-group"><label class="form-label">Terms & deliverables</label><textarea class="form-textarea" id="agTerms" placeholder="Terms, milestones, deliverables..."></textarea></div>
-    <div class="agreement-row"><span>Service fee (platform):</span><span id="feeDisplay">10%</span></div>
-    <div class="agreement-row"><span>Worker receives:</span><span id="workerReceives">₦45,000</span></div>
-    <div style="margin:24px 0">
-      <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
-        <span class="tick tick-blue" title="Accepted candidate">✓</span>
-        <span>Blue tick: candidate accepted</span>
-      </div>
-      <div style="display:flex;gap:12px;align-items:center">
-        <span class="tick tick-green" title="Agreement sealed">✓</span>
-        <span>Green tick: final agreement sealed (both agreed)</span>
-      </div>
-    </div>
-    <div id="agreeStep">
-      <button class="btn btn-gold btn-block" id="reviewBtn">Submit for Review</button>
-    </div>
-    <div id="lockStep" style="display:none">
-      <p style="text-align:center;margin-bottom:16px"><strong>Have you reviewed all details?</strong></p>
-      <div style="display:flex;gap:12px">
-        <button class="btn btn-outline btn-block" id="disagreeBtn">Disagree</button>
-        <button class="btn btn-gold btn-block" id="agreeBtn">Agree</button>
-      </div>
-      <p style="text-align:center;margin-top:12px;color:var(--text-muted);font-size:0.85rem" id="agreeStatus">Waiting for both parties to agree...</p>
-    </div>
-    <div id="sealed" style="display:none;text-align:center;padding:24px">
-      <span class="tick tick-green" style="width:64px;height:64px;font-size:2rem">✓</span>
-      <h2 style="margin:16px 0">Agreement Sealed</h2>
-      <p style="color:var(--text-soft)">Green tick added. Proceed to payment.</p>
-      <a href="/payment.html?worker=${workerId}&job=${jobId || ''}" class="btn btn-gold btn-lg" style="margin-top:16px">Proceed to Payment →</a>
-    </div>
-  `;
-
-  const priceInput = document.getElementById('agPrice');
-  function updateCalc() {
-    const p = +priceInput.value || 0;
-    document.getElementById('workerReceives').textContent = fmtPrice(p * 0.9);
-  }
-  priceInput.addEventListener('input', updateCalc); updateCalc();
-
-  let agreementId = null;
-  let clientAgreed = false, workerAgreed = false;
-
-  document.getElementById('reviewBtn').addEventListener('click', async () => {
-    if (!jobId) return Toast.show('No job linked to this agreement');
-    try {
-      const res = await API.post('/jobs/agreements', {
-        job_id: jobId, worker_id: workerId,
-        details: { scope: document.getElementById('agDetails').value, terms: document.getElementById('agTerms').value },
-        price: +priceInput.value, timeline: document.getElementById('agTimeline').value
-      });
-      agreementId = res.id;
-      document.getElementById('agreeStep').style.display = 'none';
-      document.getElementById('lockStep').style.display = 'block';
-      Toast.show('Agreement submitted. Both parties must now agree.');
-    } catch (e) { Toast.show(e.message); }
+  form.innerHTML = `<form id="agreementCreateForm">
+    <div class="form-row"><div class="form-group"><label class="form-label">Agreement title</label><input class="form-input" name="title" required></div><div class="form-group"><label class="form-label">Agreement type</label><select class="form-select" name="agreement_type"><option value="service">Service</option><option value="graphic_design">Graphic Design</option><option value="web_design">Web Design</option><option value="web_development">Web Development</option><option value="product">Physical Product</option><option value="contractor">Worker / Contractor</option></select></div></div>
+    <div class="form-group"><label class="form-label">Other party account ID</label><input class="form-input" name="worker_id" value="${worker || ''}" required></div>
+    <div class="form-row"><div class="form-group"><label class="form-label">Price (₦)</label><input class="form-input" name="price" type="number" min="0" required></div><div class="form-group"><label class="form-label">Expected completion date</label><input class="form-input" name="timeline" type="date"></div></div>
+    <div class="form-group"><label class="form-label">Scope, responsibilities, and deliverables</label><textarea class="form-textarea" name="scope" rows="5" required></textarea></div>
+    <div class="form-group"><label class="form-label">Payment terms, milestones, conditions, and warranties</label><textarea class="form-textarea" name="terms" rows="5" required></textarea></div>
+    <details class="card" style="padding:12px"><summary style="cursor:pointer">Additional required parties</summary><p style="color:var(--text-muted);font-size:.9rem">One party per line: account ID | name | role.</p><textarea class="form-textarea" name="additional_parties" rows="3"></textarea></details>
+    <label style="display:flex;gap:8px;margin:16px 0"><input type="checkbox" required> I confirm this information is accurate and I am authorized to submit it.</label><button class="btn btn-gold btn-block btn-lg">Submit agreement for administrator review</button>
+  </form>`;
+  form.querySelector('form').addEventListener('submit', async e => {
+    e.preventDefault();
+    const data = Object.fromEntries(new FormData(e.target));
+    data.job_id = job || null;
+    data.source_listing_id = listing || null;
+    data.conversation_id = conversation || null;
+    data.details = { scope: data.scope, terms: data.terms };
+    data.additional_parties = data.additional_parties.split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [user_id, party_name, party_role] = line.split('|').map(v => v.trim()); return { user_id, party_name, party_role }; });
+    delete data.scope; delete data.terms;
+    try { await API.post('/agreements', data); Toast.show('Agreement submitted for administrator review.'); setTimeout(() => location.href = conversation ? `/chat.html?to=${worker}${job ? `&job=${job}` : ''}${listing ? `&listing=${listing}` : ''}` : '/agreements.html', 700); } catch (err) { Toast.show(err.message); }
   });
-
-  document.getElementById('agreeBtn').addEventListener('click', async () => {
-    if (!agreementId) return;
-    clientAgreed = true;
-    await API.put(`/jobs/agreements/${agreementId}`, { client_agreed: true, worker_agreed: workerAgreed, locked: true });
-    checkSealed();
-  });
-  document.getElementById('disagreeBtn').addEventListener('click', async () => {
-    if (!agreementId) return;
-    await API.put(`/jobs/agreements/${agreementId}`, { client_agreed: false, locked: false });
-    Toast.show('Agreement unlocked. Edit and resubmit.');
-    document.getElementById('lockStep').style.display = 'none';
-    document.getElementById('agreeStep').style.display = 'block';
-  });
-
-  function checkSealed() {
-    if (clientAgreed && workerAgreed) {
-      API.put(`/jobs/agreements/${agreementId}`, { sealed: true }).then(() => {
-        document.getElementById('lockStep').style.display = 'none';
-        document.getElementById('sealed').style.display = 'block';
-      });
-    } else {
-      document.getElementById('agreeStatus').textContent = `You agreed. ${workerAgreed ? 'Worker agreed.' : 'Waiting for worker...'}`;
-    }
-  }
-  // Simulate worker agreeing after a delay (demo)
-  setTimeout(() => { workerAgreed = true; if (clientAgreed) checkSealed(); else document.getElementById('agreeStatus').textContent = 'Worker agreed. Waiting for you...'; }, 3000);
 });
