@@ -7,6 +7,10 @@ function authedClient(req) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   return createAuthedClient(token);
 }
+function ownUploadPaths(urls, userId) {
+  const marker = '/storage/v1/object/public/kyc/';
+  return (urls || []).map(url => { const n = String(url).indexOf(marker); return n < 0 ? null : decodeURIComponent(String(url).slice(n + marker.length).split('?')[0]); }).filter(path => path && path.startsWith(`${userId}/`));
+}
 
 async function attachProfiles(items, fk) {
   if (!items || !items.length) return [];
@@ -80,12 +84,34 @@ router.get('/products', async (req, res) => {
 
 router.post('/products', authMiddleware, async (req, res) => {
   const c = authedClient(req);
-  const { category_id, title, description, price, size, color, gender, images, video_url, stock, location, brand } = req.body;
+  const { category_id, title, description, price, size, color, gender, images, video_url, stock, location, brand, details } = req.body;
   const { data, error } = await c.from('products').insert({
-    user_id: req.user.id, category_id, title, description, price, size, color, gender, images, video_url, stock, location, brand, status: 'pending'
+    user_id: req.user.id, category_id, title, description, price, size, color, gender, images, video_url, stock, location, brand, details: details || {}, status: 'pending'
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
+});
+
+router.put('/listings/:type/:id', authMiddleware, async (req, res) => {
+  const c = authedClient(req);
+  const table = req.params.type === 'service' ? 'services' : req.params.type === 'product' ? 'products' : null;
+  if (!table) return res.status(400).json({ error: 'Invalid listing type.' });
+  const fields = table === 'products' ? ['category_id','title','description','price','size','color','gender','images','video_url','stock','location','brand','details'] : ['category_id','title','description','price','delivery_days','images','video_url','location'];
+  const changes = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => fields.includes(key)));
+  if (!Object.keys(changes).length) return res.status(400).json({ error: 'No editable listing fields supplied.' });
+  const { data, error } = await c.from(table).update({ ...changes, status: 'pending' }).eq('id', req.params.id).eq('user_id', req.user.id).select().single();
+  if (error) return res.status(400).json({ error: error.message }); res.json(data);
+});
+
+router.delete('/listings/:type/:id', authMiddleware, async (req, res) => {
+  const c = authedClient(req); const table = req.params.type === 'service' ? 'services' : req.params.type === 'product' ? 'products' : null;
+  if (!table) return res.status(400).json({ error: 'Invalid listing type.' });
+  const { data: existing } = await c.from(table).select('images,video_url').eq('id', req.params.id).eq('user_id', req.user.id).maybeSingle();
+  if (!existing) return res.status(404).json({ error: 'Listing not found.' });
+  const { data, error } = await c.from(table).delete().eq('id', req.params.id).eq('user_id', req.user.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  const paths = ownUploadPaths([...(existing.images || []), existing.video_url], req.user.id); if (paths.length) await c.storage.from('kyc').remove(paths);
+  res.json({ ok: true, listing: data });
 });
 
 // Single service/product
@@ -137,7 +163,7 @@ router.put('/profile', authMiddleware, async (req, res) => {
     'first_name', 'middle_name', 'last_name', 'display_name', 'phone',
     'country', 'state', 'city', 'address', 'bank_name', 'account_number',
     'account_holder_name', 'profile_image', 'cover_image', 'about',
-    'cover_letter', 'availability', 'response_time_hours'
+    'cover_letter', 'availability', 'response_time_hours', 'profile_sections'
   ];
   const updates = {};
   for (const field of allowedFields) {
