@@ -32,13 +32,16 @@ router.get('/conversations', authMiddleware, async (req, res) => {
 // Create or get conversation
 router.post('/conversations', authMiddleware, async (req, res) => {
   const c = authedClient(req);
-  const { other_user_id, related_job_id } = req.body;
+  const { other_user_id, related_job_id, related_listing_id } = req.body;
   const a = [req.user.id, other_user_id].sort()[0];
   const b = [req.user.id, other_user_id].sort()[1];
-  const { data: existing } = await c.from('chat_conversations').select('*').eq('user_a', a).eq('user_b', b).maybeSingle();
+  let existingQuery = c.from('chat_conversations').select('*').eq('user_a', a).eq('user_b', b);
+  existingQuery = related_job_id ? existingQuery.eq('related_job_id', related_job_id) : existingQuery.is('related_job_id', null);
+  existingQuery = related_listing_id ? existingQuery.eq('related_listing_id', related_listing_id) : existingQuery.is('related_listing_id', null);
+  const { data: existing } = await existingQuery.maybeSingle();
   if (existing) return res.json(existing);
   const { data, error } = await c.from('chat_conversations').insert({
-    user_a: a, user_b: b, related_job_id
+    user_a: a, user_b: b, related_job_id: related_job_id || null, related_listing_id: related_listing_id || null
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
