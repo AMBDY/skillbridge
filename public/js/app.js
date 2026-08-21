@@ -178,6 +178,12 @@ const Upload = {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.error || 'Upload failed');
     return data.url;
+   },
+  async remove(url) {
+    const token = Auth.getToken();
+    const res = await fetch('/api/uploads', { method: 'DELETE', headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({ url }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || 'File removal failed');
   }
 };
 
