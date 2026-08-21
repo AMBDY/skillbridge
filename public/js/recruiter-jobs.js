@@ -1,5 +1,30 @@
 document.addEventListener('DOMContentLoaded', loadRecruiterJobs);
 
+const APPLICATION_FIELDS = [
+  ['first_name', 'First name', 'text'], ['middle_name', 'Middle name', 'text'], ['last_name', 'Last name', 'text'],
+  ['age', 'Age', 'number'], ['gender', 'Gender', 'select:Male|Female|Prefer not to say'], ['date_of_birth', 'Date of birth', 'date'],
+  ['nationality', 'Nationality', 'text'], ['country', 'Country of residence', 'text'], ['city', 'City', 'text'],
+  ['address', 'Residential address', 'text'], ['linkedin', 'LinkedIn profile', 'url'], ['portfolio_url', 'Portfolio URL', 'url'],
+  ['github_url', 'GitHub URL', 'url'], ['experience_years', 'Years of experience', 'number'], ['expected_salary', 'Expected salary', 'number'],
+  ['availability', 'Availability / start date', 'date'], ['work_authorization', 'Work authorization', 'text'],
+  ['cover_letter', 'Cover letter', 'textarea'], ['cv', 'CV / résumé', 'document:application/pdf,.doc,.docx'],
+  ['cover_letter_file', 'Cover-letter document', 'document:application/pdf,.doc,.docx'],
+  ['contact_preferences', 'Contact preferences', 'textarea'], ['employment_history', 'Employment history (add each employer)', 'textarea'],
+  ['education', 'Education (add each institution)', 'textarea'], ['certifications', 'Professional certifications', 'textarea'],
+  ['skills', 'Skills and proficiency', 'textarea'], ['job_questions', 'Job-specific questions', 'textarea'],
+  ['portfolio_samples', 'Portfolio and work samples', 'textarea'], ['references', 'Professional references', 'textarea'],
+  ['salary_compensation', 'Salary and compensation expectations', 'textarea'], ['work_preferences', 'Work preferences', 'textarea'],
+  ['identity_verification', 'Identity verification', 'textarea'], ['background_checks', 'Background check consent', 'textarea'],
+  ['licenses', 'Professional licenses', 'textarea'], ['languages', 'Languages and proficiency', 'textarea'],
+  ['awards', 'Achievements and awards', 'textarea'], ['publications', 'Publications and research', 'textarea'],
+  ['memberships', 'Professional memberships', 'textarea'], ['training', 'Training and courses', 'textarea'],
+  ['internships', 'Internships and volunteer experience', 'textarea'], ['career_breaks', 'Career breaks / employment gaps', 'textarea'],
+  ['legal_declarations', 'Criminal / legal declarations', 'textarea'], ['conflicts', 'Conflict of interest declaration', 'textarea'],
+  ['relatives', 'Relatives / existing employees', 'textarea'], ['diversity', 'Voluntary diversity / equal opportunity information', 'textarea'],
+  ['accessibility', 'Accessibility / accommodation request', 'textarea'], ['emergency_contact', 'Emergency contact', 'textarea'],
+  ['supporting_documents', 'Supporting documents', 'document:application/pdf,.doc,.docx,image/*'], ['consents', 'Consent and declarations', 'textarea']
+];
+
 async function loadRecruiterJobs() {
   if (!Auth.isLoggedIn()) {
     location.href = '/signin.html';
@@ -20,7 +45,7 @@ async function loadRecruiterJobs() {
       <div class="card-body">
         <strong>${job.title}</strong>
         <div class="card-meta">${job.company_name} | ${job.approval_status} | ${job.ai_plan}</div>
-        <p style="color:var(--text-soft);margin-top:8px">${job.description || ''}</p>
+        <p style="color:var(--text-soft);margin-top:8px">${job.description || ''}</p><div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-outline btn-sm" onclick="editRecruitmentPosting('${job.id}')">Edit / Replace</button><button class="btn btn-outline btn-sm" onclick="deleteRecruitmentPosting('${job.id}')">Delete</button></div>
       </div>
     </div>
   `).join('') : '<p style="color:var(--text-muted)">No recruitment jobs posted yet.</p>';
@@ -41,6 +66,11 @@ window.toggleRecruitmentForm = function () {
               <div class="form-group"><label class="form-label">Job Title</label><input class="form-input" name="title" required></div>
               <div class="form-group"><label class="form-label">Company Name</label><input class="form-input" name="company_name" required></div>
             </div>
+
+            <details class="card" style="margin:12px 0;padding:12px"><summary style="cursor:pointer;font-weight:600">Application requirements</summary>
+              <p style="color:var(--text-muted);font-size:.9rem;margin:8px 0">Choose exactly what applicants must complete for this job. These choices are saved with this job only.</p>
+              <div class="grid grid-2">${APPLICATION_FIELDS.map(([key, label, type]) => `<label style="display:flex;gap:8px;align-items:center"><input type="checkbox" class="application-field" data-key="${key}" data-label="${label}" data-type="${type}"> ${label}</label>`).join('')}</div>
+            </details>
 
             <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" name="description" required></textarea></div>
             <div class="form-group"><label class="form-label">Responsibilities comma separated</label><textarea class="form-textarea" name="responsibilities"></textarea></div>
@@ -100,14 +130,28 @@ window.toggleRecruitmentForm = function () {
   }
 };
 
+window.editRecruitmentPosting = async function (id) {
+  const jobs = await API.get('/recruitment/recruiter/jobs'); const job = jobs.find(j => j.id === id); if (!job) return Toast.show('Job not found');
+  window.toggleRecruitmentForm(); const form = document.getElementById('recruitmentPostForm'); form.dataset.editId = id;
+  Object.entries(job).forEach(([key, value]) => { if (form.elements[key] && value != null) form.elements[key].value = Array.isArray(value) ? value.join(', ') : value; });
+  form.querySelector('button[type="submit"]').textContent = 'Submit Update for Approval';
+  Toast.show('Update the job and submit it for a fresh admin review.');
+};
+window.deleteRecruitmentPosting = async function (id) { if (!confirm('Delete this recruitment job?')) return; try { await API.del(`/recruitment/recruiter/jobs/${id}`); Toast.show('Recruitment job deleted'); loadRecruiterJobs(); } catch(e) { Toast.show(e.message); } };
+
 async function submitRecruitmentJob(e) {
   e.preventDefault();
 
   const data = Object.fromEntries(new FormData(e.target));
+  data.application_fields = Array.from(e.target.querySelectorAll('.application-field:checked')).map(input => ({
+    key: input.dataset.key, label: input.dataset.label, type: input.dataset.type, required: true
+  }));
 
   try {
-    await API.post('/recruitment/jobs', data);
-    Toast.show('Recruitment job submitted for approval');
+    const editId = e.target.dataset.editId;
+    if (editId) await API.put(`/recruitment/recruiter/jobs/${editId}`, data);
+    else await API.post('/recruitment/jobs', data);
+    Toast.show(editId ? 'Updated recruitment job submitted for approval' : 'Recruitment job submitted for approval');
     e.target.reset();
     await loadRecruiterJobs();
   } catch (err) {
