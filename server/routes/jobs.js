@@ -89,6 +89,11 @@ router.put('/:id', authMiddleware, async (req, res) => {
   const c = authedClient(req);
   const allowed = ['category_id', 'title', 'description', 'budget', 'duration', 'price_min', 'price_max', 'gender', 'colors', 'size', 'state', 'location', 'reference_images', 'additional_notes'];
   const changes = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => allowed.includes(key)));
+  // Do not send empty optional form values to Postgres. In particular, older
+  // records may include date fields and an empty string is not a timestamptz.
+  Object.keys(changes).forEach(key => {
+    if (changes[key] === '') changes[key] = null;
+  });
   if (!Object.keys(changes).length) return res.status(400).json({ error: 'No editable job fields supplied.' });
   const { data, error } = await c.from('jobs').update({ ...changes, status: 'pending' }).eq('id', req.params.id).eq('user_id', req.user.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
@@ -97,11 +102,12 @@ router.put('/:id', authMiddleware, async (req, res) => {
 
 router.delete('/:id', authMiddleware, async (req, res) => {
   const c = authedClient(req);
-  const { data: job } = await c.from('jobs').select('reference_images').eq('id', req.params.id).eq('user_id', req.user.id).maybeSingle();
+  const { data: job } = await c.from('jobs').select('*').eq('id', req.params.id).eq('user_id', req.user.id).maybeSingle();
   if (!job) return res.status(404).json({ error: 'Job not found.' });
-  const { data, error } = await c.from('jobs').delete().eq('id', req.params.id).eq('user_id', req.user.id).select().single();
+  // Keep an owner-deleted job in the administrator Deleted tab for review.
+  // The original post and media remain available there until an admin purges it.
+  const { data, error } = await c.from('jobs').update({ status: 'deleted_by_owner' }).eq('id', req.params.id).eq('user_id', req.user.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
-  const paths = ownUploadPaths(job.reference_images, req.user.id); if (paths.length) await c.storage.from('kyc').remove(paths);
   res.json({ ok: true, job: data });
 });
 
