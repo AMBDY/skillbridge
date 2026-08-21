@@ -16,7 +16,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         <button type="button" onclick="window.__removeRefImage(${i})" style="position:absolute;top:-6px;right:-6px;background:#b91c1c;color:#fff;border:none;border-radius:50%;width:20px;height:20px;font-size:12px;cursor:pointer">×</button>
       </div>`).join('');
   }
-  window.__removeRefImage = (i) => { existingRefImages.splice(i, 1); renderRefPreview(); };
+  window.__removeRefImage = async (i) => {
+    const [url] = existingRefImages.splice(i, 1); renderRefPreview();
+    try { await Upload.remove(url); } catch (e) { Toast.show(`Image removed from this job, but storage cleanup failed: ${e.message}`); }
+  };
   refInput.addEventListener('change', async () => {
     const files = Array.from(refInput.files);
     if (!files.length) return;
@@ -50,7 +53,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     try {
       if (editId) {
         await API.put(`/jobs/${editId}`, data);
-        Toast.show('Job updated!');
+        Toast.show('Job update submitted for admin approval.');
         setTimeout(() => location.href = '/recruitment.html', 1200);
       } else {
         await API.post('/jobs', data);
