@@ -107,6 +107,16 @@ router.get('/jobs', async (req, res) => {
 router.put('/jobs/:id/status', async (req, res) => {
   const c = authedClient(req);
   const { status, reason } = req.body;
+  const { data: before } = await c.from('jobs').select('*').eq('id', req.params.id).maybeSingle();
+  if (!before) return res.status(404).json({ error: 'Job not found.' });
+  // Rejection is final: notify the poster first, then remove the job from the
+  // public and poster views. It is deliberately not retained as an owner delete.
+  if (status === 'cancelled') {
+    await notify(c, { userId: before.user_id, type: 'job_rejected', title: 'Job rejected', body: reason ? `"${before.title}" was rejected. Reason: ${reason}` : `"${before.title}" was rejected.`, link: '/dashboard.html' });
+    const { error } = await c.from('jobs').delete().eq('id', req.params.id);
+    if (error) return res.status(400).json({ error: error.message });
+    return res.json({ ok: true, deleted: true });
+  }
   const { data, error } = await c.from('jobs').update({ status }).eq('id', req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
   if (data) {
@@ -117,6 +127,29 @@ router.put('/jobs/:id/status', async (req, res) => {
       link: `/job.html?id=${data.id}`
     });
   }
+  res.json(data);
+});
+
+// Permanent administrator purge for an owner-deleted job, including its files.
+router.delete('/jobs/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { data: job } = await c.from('jobs').select('user_id, reference_images').eq('id', req.params.id).maybeSingle();
+  if (!job) return res.status(404).json({ error: 'Job not found.' });
+  const { error } = await c.from('jobs').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  const marker = '/storage/v1/object/public/kyc/';
+  const paths = (job.reference_images || []).map(url => { const i = String(url).indexOf(marker); return i < 0 ? null : decodeURIComponent(String(url).slice(i + marker.length).split('?')[0]); }).filter(p => p && p.startsWith(`${job.user_id}/`));
+  if (paths.length) await c.storage.from('kyc').remove(paths);
+  res.json({ ok: true });
+});
+
+router.put('/jobs/:id', async (req, res) => {
+  const c = authedClient(req);
+  const allowed = ['title', 'description', 'budget', 'duration', 'location', 'state', 'additional_notes', 'reference_images', 'status'];
+  const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => allowed.includes(key)));
+  if (!Object.keys(patch).length) return res.status(400).json({ error: 'No editable job fields supplied.' });
+  const { data, error } = await c.from('jobs').update(patch).eq('id', req.params.id).select().single();
+  if (error) return res.status(400).json({ error: error.message });
   res.json(data);
 });
 
@@ -139,6 +172,13 @@ router.put('/disputes/:id', async (req, res) => {
     if (userProfile?.email) sendEmail('dispute_update', userProfile.email, { name: userProfile.display_name, message: resolution || `Status: ${status}` }).catch(() => {});
   }
   res.json(data);
+});
+
+router.delete('/disputes/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { error } = await c.from('disputes').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 // Payments
@@ -475,6 +515,13 @@ router.put('/comments/:id', async (req, res) => {
   res.json(data);
 });
 
+router.delete('/comments/:id', async (req, res) => {
+  const c = authedClient(req);
+  const { error } = await c.from('comments').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
+});
+
 // Subscription Plans (admin-configurable, replaces hardcoded tiers)
 router.get('/plans', async (req, res) => {
   const c = authedClient(req);
@@ -625,6 +672,16 @@ router.put('/support/tickets/:id', async (req, res) => {
   const { data, error } = await c.from('support_tickets').update(patch).eq('id', req.params.id).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
+});
+
+router.delete('/support/tickets/:id', async (req, res) => {
+  const c = authedClient(req);
+  // Remove child messages first so the ticket can be permanently removed even
+  // when its foreign key is configured without ON DELETE CASCADE.
+  await c.from('support_ticket_messages').delete().eq('ticket_id', req.params.id);
+  const { error } = await c.from('support_tickets').delete().eq('id', req.params.id);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ ok: true });
 });
 
 router.post('/support/tickets/:id/messages', async (req, res) => {
