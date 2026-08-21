@@ -146,6 +146,15 @@ async function getAdsenseScript() {
   return `<script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=${pubId}" crossorigin="anonymous"></script>`;
 }
 
+let brandCache = { data: null, checkedAt: 0 };
+async function getBrandAssets() {
+  if (Date.now() - brandCache.checkedAt > 60000) {
+    const { data } = await supabase.from('platform_settings').select('favicon_url').limit(1).maybeSingle();
+    brandCache = { data, checkedAt: Date.now() };
+  }
+  return brandCache.data || {};
+}
+
 function serveHtml(filename, res, req) {
   const file = path.join(PUBLIC_DIR, filename);
   fs.readFile(file, 'utf8', async (err, data) => {
@@ -182,6 +191,11 @@ function serveHtml(filename, res, req) {
       const adsenseScript = await getAdsenseScript();
       if (adsenseScript) injected = injected.replace('</head>', `${adsenseScript}</head>`);
     } catch { /* AdSense script injection is non-critical — never block page load on this */ }
+
+    try {
+      const brand = await getBrandAssets();
+      if (brand.favicon_url) injected = injected.replace('</head>', `<link rel="icon" href="${brand.favicon_url}"></head>`);
+    } catch { /* Branding is non-critical — never block page load on this */ }
 
     res.type('html').send(injected);
   });
