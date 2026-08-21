@@ -25,6 +25,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     { id: 'blog', label: 'Blog / News' },
     { id: 'content', label: 'Site Content' },
     { id: 'homepage', label: 'Homepage Builder' },
+    { id: 'builder', label: 'Site Builder & Roles' },
+    { id: 'agreements', label: 'Agreement Management' },
     { id: 'apikeys', label: 'API Keys' },
     { id: 'emails', label: 'Email Templates' },
     { id: 'testimonials', label: 'Testimonials' },
@@ -66,6 +68,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (sec === 'blog') return await loadBlog();
       if (sec === 'content') return await loadSiteContent();
       if (sec === 'homepage') return await loadHomepageBuilder();
+      if (sec === 'builder') return await loadBuilder();
+      if (sec === 'agreements') return await loadAgreements();
       if (sec === 'apikeys') return await loadApiKeys();
       if (sec === 'emails') return await loadEmailTemplates();
       if (sec === 'testimonials') return await loadTestimonials();
@@ -93,7 +97,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   async function loadUsers() {
-    const users = await API.get('/admin/users');
+    const [users, roles] = await Promise.all([API.get('/admin/users'), API.get('/admin/builder/roles')]);
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Users</h1>
       <table class="table" style="margin-top:24px"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>KYC</th><th>Tier</th><th>Status</th><th>Actions</th></tr></thead><tbody>
@@ -101,7 +105,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         <td>${u.display_name}</td><td>${u.email || ''}</td><td>${u.role}</td><td>L${u.kyc_level}</td><td>${u.subscription_tier}</td>
         <td><span class="badge ${u.account_status === 'active' ? 'badge-verified' : ''}" style="${u.account_status !== 'active' ? 'background:#fee2e2;color:#b91c1c' : ''}">${u.account_status || 'active'}</span></td>
         <td style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn btn-outline btn-sm" onclick="toggleAdmin('${u.user_id}')">Make Admin</button>
+          <select class="form-select" style="width:auto;padding:5px" onchange="assignUserRole('${u.user_id}',this.value)"><option value="">Change role…</option>${roles.map(r => `<option value="${r.role_key}">${r.name}</option>`).join('')}</select>
           ${u.account_status !== 'suspended' ? `<button class="btn btn-outline btn-sm" onclick="setAccountStatus('${u.user_id}','suspended')">Suspend</button>` : ''}
           ${u.account_status !== 'banned' ? `<button class="btn btn-outline btn-sm" onclick="setAccountStatus('${u.user_id}','banned')">Ban</button>` : ''}
           ${u.account_status !== 'active' ? `<button class="btn btn-gold btn-sm" onclick="setAccountStatus('${u.user_id}','active')">Restore</button>` : ''}
@@ -109,7 +113,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       </tr>`).join('')}
       </tbody></table>`;
   }
-  window.toggleAdmin = async (id) => { await API.put(`/admin/users/${id}`, { role: 'admin' }); Toast.show('User promoted to admin'); load('users'); };
+  window.assignUserRole = async (id, role) => { if (!role) return; try { await API.put(`/admin/users/${id}`, { role }); Toast.show('User role updated'); load('users'); } catch(e) { Toast.show(e.message); } };
   window.setAccountStatus = async (id, account_status) => {
     if (account_status === 'active') {
       try { await API.put(`/admin/users/${id}`, { account_status }); Toast.show('Account restored'); load('users'); }
@@ -323,18 +327,41 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   async function loadRecruitmentJobs() {
     const jobs = await API.get('/recruitment/admin/jobs');
+    const grouped = jobs.reduce((groups, job) => {
+      const key = job.ai_plan || 'basic';
+      (groups[key] ||= []).push(job);
+      return groups;
+    }, {});
+    const jobRows = rows => rows.map(j => `<tr><td>${j.title}</td><td>${j.company_name}</td><td>${j.ai_plan}</td><td><span class="badge badge-kyc">${j.approval_status}</span></td>
+      <td>
+        <button class="btn btn-outline btn-sm" onclick="editRecruitmentJob('${j.id}')">Review / Edit</button>
+        ${j.approval_status !== 'approved' ? `<button class="btn btn-gold btn-sm" onclick="setRecruitmentJobStatus('${j.id}','approved')">Approve</button>` : ''}
+        ${j.approval_status !== 'rejected' ? `<button class="btn btn-outline btn-sm" onclick="rejectRecruitmentJob('${j.id}')">Reject</button>` : ''}
+        ${j.approval_status === 'approved' ? `<button class="btn btn-outline btn-sm" onclick="suspendRecruitmentJob('${j.id}')">Suspend</button>` : ''}
+      </td></tr>`).join('');
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Recruitment Jobs</h1>
-      <p class="section-sub">Approve before a job becomes visible on the public Job Recruitment page.</p>
-      <table class="table" style="margin-top:24px"><thead><tr><th>Title</th><th>Company</th><th>AI Plan</th><th>Status</th><th>Actions</th></tr></thead><tbody>
-      ${jobs.map(j => `<tr><td>${j.title}</td><td>${j.company_name}</td><td>${j.ai_plan}</td><td><span class="badge badge-kyc">${j.approval_status}</span></td>
-        <td>
-          ${j.approval_status !== 'approved' ? `<button class="btn btn-gold btn-sm" onclick="setRecruitmentJobStatus('${j.id}','approved')">Approve</button>` : ''}
-          ${j.approval_status !== 'rejected' ? `<button class="btn btn-outline btn-sm" onclick="rejectRecruitmentJob('${j.id}')">Reject</button>` : ''}
-          ${j.approval_status === 'approved' ? `<button class="btn btn-outline btn-sm" onclick="suspendRecruitmentJob('${j.id}')">Suspend</button>` : ''}
-        </td></tr>`).join('')}
-      </tbody></table>`;
+      <p class="section-sub">Review, edit, and approve jobs before they become public. Jobs are grouped by the recruiter’s selected AI plan.</p>
+      ${Object.entries(grouped).map(([plan, rows]) => `<h3 style="margin-top:24px;text-transform:capitalize">${plan} plan (${rows.length})</h3><table class="table" style="margin-top:8px"><thead><tr><th>Title</th><th>Company</th><th>AI Plan</th><th>Status</th><th>Actions</th></tr></thead><tbody>${jobRows(rows)}</tbody></table>`).join('') || '<p style="color:var(--text-muted)">No recruitment jobs submitted yet.</p>'}`;
   }
+  window.editRecruitmentJob = async (id) => {
+    const job = await API.get('/recruitment/admin/jobs').then(rows => rows.find(row => row.id === id));
+    if (!job) return Toast.show('Recruitment job not found');
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:1000;background:rgba(0,0,0,.55);overflow:auto;padding:24px';
+    overlay.innerHTML = `<div class="card" style="max-width:720px;margin:24px auto"><div class="card-body"><h3>Review recruitment job</h3>
+      <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="adminRjTitle" value="${job.title}"></div>
+      <div class="form-group"><label class="form-label">Company</label><input class="form-input" id="adminRjCompany" value="${job.company_name}"></div>
+      <div class="form-group"><label class="form-label">Description</label><textarea class="form-textarea" id="adminRjDescription" rows="8">${job.description}</textarea></div>
+      <div class="form-group"><label class="form-label">Required skills (comma-separated)</label><input class="form-input" id="adminRjSkills" value="${(job.required_skills || []).join(', ')}"></div>
+      <div style="display:flex;gap:8px;justify-content:flex-end"><button class="btn btn-outline" id="closeRjEdit">Cancel</button><button class="btn btn-gold" id="saveRjEdit">Save changes</button></div></div></div>`;
+    document.body.append(overlay);
+    overlay.querySelector('#closeRjEdit').onclick = () => overlay.remove();
+    overlay.querySelector('#saveRjEdit').onclick = async () => {
+      await API.put(`/recruitment/admin/jobs/${id}`, { title: overlay.querySelector('#adminRjTitle').value.trim(), company_name: overlay.querySelector('#adminRjCompany').value.trim(), description: overlay.querySelector('#adminRjDescription').value.trim(), required_skills: overlay.querySelector('#adminRjSkills').value.split(',').map(s => s.trim()).filter(Boolean) });
+      overlay.remove(); Toast.show('Recruitment job updated'); load('recruitment');
+    };
+  };
   window.setRecruitmentJobStatus = async (id, approval_status) => {
     await API.put(`/recruitment/admin/jobs/${id}/status`, { approval_status });
     Toast.show('Recruitment job ' + approval_status);
@@ -675,7 +702,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             const id = `sc_${page}_${sec}`;
             return `<div class="form-group"><label class="form-label" style="text-transform:capitalize">${sec.replace('_', ' ')}</label><textarea class="form-textarea" rows="2" id="${id}">${existing?.value || ''}</textarea></div>`;
           }).join('')}
-          <button class="btn btn-gold btn-sm" onclick="saveSiteContent('${page}', ${JSON.stringify(sections.filter(s => s !== 'hero_images'))})">Save ${page.replace('_', ' ')}</button>
+           <button class="btn btn-gold btn-sm" onclick="saveSiteContent('${page}')">Save ${page.replace('_', ' ')}</button>
         </div></div>`).join('')}`;
 
     window.__heroImages = heroImages;
@@ -708,8 +735,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       Toast.show('Slideshow saved — live on the homepage now');
     } catch (e) { Toast.show(e.message); }
   };
-  window.saveSiteContent = async (page, sections) => {
+  window.saveSiteContent = async (page) => {
     try {
+      const sections = (CONTENT_PAGES[page] || []).filter(sec => sec !== 'hero_images');
       for (const sec of sections) {
         const value = document.getElementById(`sc_${page}_${sec}`).value;
         await API.put('/admin/site-content', { page_key: page, section_key: sec, value });
@@ -850,13 +878,17 @@ document.addEventListener('DOMContentLoaded', async () => {
     const rows = await API.get('/admin/featured');
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Featured Items</h1>
-      <p class="section-sub">Pin an existing service, product, or job to a placement. It appears wherever that placement is displayed (currently: homepage).</p>
+        <p class="section-sub">Pin an existing service, product, or job to a placement. You can also add a promotional image or video for the featured card.</p>
       <div class="card" style="margin:20px 0"><div class="card-body">
         <h3>Feature an item</h3>
-        <div class="form-row">
+         <div class="form-row">
           <div class="form-group"><label class="form-label">Type</label><select class="form-select" id="fType" onchange="searchFeaturable()"><option value="service">Service</option><option value="product">Product</option><option value="job">Job</option></select></div>
           <div class="form-group"><label class="form-label">Search by title</label><input class="form-input" id="fSearch" oninput="searchFeaturable()" placeholder="Start typing..."></div>
-        </div>
+         </div>
+         <div class="form-row">
+           <div class="form-group"><label class="form-label">Promotional media (optional)</label><input class="form-input" type="file" id="fMedia" accept="image/*,video/*"></div>
+           <div class="form-group"><label class="form-label">Display note (optional)</label><input class="form-input" id="fNote" maxlength="180" placeholder="Short promotional message"></div>
+         </div>
         <div id="fResults" style="margin:8px 0;display:flex;flex-direction:column;gap:6px"></div>
         <input type="hidden" id="fItemId">
         <div id="fSelected" style="color:var(--text-muted);font-size:0.9rem;margin-bottom:10px"></div>
@@ -890,11 +922,15 @@ document.addEventListener('DOMContentLoaded', async () => {
     const item_id = document.getElementById('fItemId').value;
     if (!item_id) return Toast.show('Search and select an item first');
     try {
-      await API.post('/admin/featured', {
+       const media = document.getElementById('fMedia').files[0];
+       const media_url = media ? await Upload.file(media) : null;
+       await API.post('/admin/featured', {
         item_type: document.getElementById('fType').value,
         item_id,
         placement: document.getElementById('fPlacement').value,
-        expires_at: document.getElementById('fExpiry').value || null
+         expires_at: document.getElementById('fExpiry').value || null,
+         media_url,
+         display_note: document.getElementById('fNote').value.trim() || null
       });
       Toast.show('Item featured');
       load('featured');
@@ -1133,7 +1169,12 @@ document.addEventListener('DOMContentLoaded', async () => {
             <td>${p.name} ${p.badge ? `<span class="badge badge-elite">${p.badge}</span>` : ''}</td>
             <td>${fmtPrice(p.price)}</td><td>${p.duration_days}d</td><td>${p.priority_boost}</td>
             <td>${p.is_active ? 'Active' : 'Inactive'}</td>
-            <td>${p.is_active ? `<button class="btn btn-outline btn-sm" onclick="deactivatePlan('${p.id}')">Deactivate</button>` : ''}</td>
+            <td style="display:flex;gap:6px;flex-wrap:wrap">
+              <button class="btn btn-outline btn-sm" onclick="editPlan('${p.id}')">Edit</button>
+              ${p.is_active
+                ? `<button class="btn btn-outline btn-sm" onclick="setPlanActive('${p.id}', false)">Deactivate</button>`
+                : `<button class="btn btn-gold btn-sm" onclick="setPlanActive('${p.id}', true)">Activate</button><button class="btn btn-outline btn-sm" onclick="deletePlan('${p.id}')">Delete</button>`}
+            </td>
           </tr>`).join('')}</tbody>
         </table>
       </div></div>`;
@@ -1162,10 +1203,16 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     Toast.show('Commission & escrow settings saved');
   };
-  window.showAddPlan = () => { document.getElementById('planForm').style.display = 'block'; };
+  window.showAddPlan = () => {
+    document.getElementById('planForm').style.display = 'block';
+    document.getElementById('planForm').dataset.editId = '';
+    ['pKey', 'pName', 'pPrice', 'pBadge', 'pBenefits'].forEach(id => { document.getElementById(id).value = ''; });
+    document.getElementById('pDuration').value = 30;
+    document.getElementById('pBoost').value = 0;
+  };
   window.savePlan = async () => {
     try {
-      await API.post('/admin/plans', {
+      const payload = {
         tier_key: document.getElementById('pKey').value.trim().toLowerCase().replace(/\s+/g, '_'),
         name: document.getElementById('pName').value,
         price: +document.getElementById('pPrice').value,
@@ -1173,14 +1220,36 @@ document.addEventListener('DOMContentLoaded', async () => {
         badge: document.getElementById('pBadge').value || null,
         benefits: document.getElementById('pBenefits').value.split(',').map(s => s.trim()).filter(Boolean),
         priority_boost: +document.getElementById('pBoost').value || 0
-      });
-      Toast.show('Plan created');
+      };
+      const id = document.getElementById('planForm').dataset.editId;
+      if (id) await API.put(`/admin/plans/${id}`, payload);
+      else await API.post('/admin/plans', payload);
+      Toast.show(id ? 'Plan updated' : 'Plan created');
       loadSettings();
     } catch (e) { Toast.show(e.message); }
   };
-  window.deactivatePlan = async (id) => {
+  window.setPlanActive = async (id, is_active) => {
+    await API.put(`/admin/plans/${id}`, { is_active });
+    Toast.show(is_active ? 'Plan activated' : 'Plan deactivated');
+    loadSettings();
+  };
+  window.editPlan = async (id) => {
+    const plan = await API.get('/admin/plans').then(rows => rows.find(p => p.id === id));
+    if (!plan) return Toast.show('Plan not found');
+    document.getElementById('planForm').style.display = 'block';
+    document.getElementById('planForm').dataset.editId = id;
+    document.getElementById('pKey').value = plan.tier_key;
+    document.getElementById('pName').value = plan.name;
+    document.getElementById('pPrice').value = plan.price;
+    document.getElementById('pDuration').value = plan.duration_days;
+    document.getElementById('pBadge').value = plan.badge || '';
+    document.getElementById('pBenefits').value = (plan.benefits || []).join(', ');
+    document.getElementById('pBoost').value = plan.priority_boost || 0;
+  };
+  window.deletePlan = async (id) => {
+    if (!confirm('Delete this inactive plan? This cannot be undone.')) return;
     await API.del(`/admin/plans/${id}`);
-    Toast.show('Plan deactivated');
+    Toast.show('Plan deleted');
     loadSettings();
   };
 
@@ -1211,5 +1280,20 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
   };
 
+  const BUILDER_FEATURES = [['homepage','Homepage'],['hire','Hire marketplace'],['shop','Shop marketplace'],['jobs','Jobs'],['recruitment','Recruitment'],['chat','Chat'],['payments','Payments'],['agreements','Agreements'],['blog','Blog'],['support','Support'],['profile_edit','Profile editing']];
+  async function loadBuilder() {
+    const [features, roles] = await Promise.all([API.get('/admin/builder/features'), API.get('/admin/builder/roles')]);
+    const featureMap = new Map(features.map(f => [f.feature_key, f]));
+    document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Site Builder & Roles</h1><p class="section-sub">Enable pages and features, then maintain custom role permissions.</p><div class="card" style="margin-top:20px"><div class="card-body"><h3>Pages and features</h3>${BUILDER_FEATURES.map(([key,label]) => `<label style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"><span>${label}</span><input type="checkbox" class="builder-feature" data-key="${key}" ${featureMap.get(key)?.enabled !== false ? 'checked' : ''}></label>`).join('')}<button class="btn btn-gold btn-sm" style="margin-top:12px" onclick="saveBuilderFeatures()">Save feature access</button></div></div><div class="card" style="margin-top:20px"><div class="card-body"><h3>Custom roles</h3><div class="form-row"><div class="form-group"><label class="form-label">Role key</label><input class="form-input" id="builderRoleKey" placeholder="moderator"></div><div class="form-group"><label class="form-label">Role name</label><input class="form-input" id="builderRoleName" placeholder="Moderator"></div></div><div class="form-group"><label class="form-label">Description</label><input class="form-input" id="builderRoleDescription"></div><div class="form-group"><label class="form-label">Permissions (comma-separated)</label><input class="form-input" id="builderRolePermissions" placeholder="review_jobs, manage_content"></div><button class="btn btn-gold btn-sm" onclick="createBuilderRole()">Add role</button><div style="margin-top:16px">${roles.map(r => `<div class="card" style="padding:12px;margin-top:8px"><strong>${r.name}</strong> <span style="color:var(--text-muted)">${r.role_key}</span><p style="font-size:.9rem;color:var(--text-soft)">${r.description || ''}</p><p style="font-size:.82rem;color:var(--text-muted)">${(r.permissions || []).join(', ') || 'No permissions'}</p>${!r.is_system ? `<button class="btn btn-outline btn-sm" onclick="deleteBuilderRole('${r.id}')">Delete</button>` : ''}</div>`).join('') || '<p style="color:var(--text-muted)">No custom roles yet.</p>'}</div></div></div>`;
+  }
+  window.saveBuilderFeatures = async () => { try { await Promise.all(Array.from(document.querySelectorAll('.builder-feature')).map(el => API.put(`/admin/builder/features/${el.dataset.key}`, { enabled: el.checked }))); Toast.show('Site feature access saved'); } catch (e) { Toast.show(e.message); } };
+  window.createBuilderRole = async () => { try { await API.post('/admin/builder/roles', { role_key: document.getElementById('builderRoleKey').value.trim().toLowerCase().replace(/\s+/g, '_'), name: document.getElementById('builderRoleName').value.trim(), description: document.getElementById('builderRoleDescription').value.trim(), permissions: document.getElementById('builderRolePermissions').value.split(',').map(x => x.trim()).filter(Boolean) }); Toast.show('Role created'); load('builder'); } catch (e) { Toast.show(e.message); } };
+  window.deleteBuilderRole = async id => { if (!confirm('Delete this custom role?')) return; try { await API.del(`/admin/builder/roles/${id}`); load('builder'); } catch (e) { Toast.show(e.message); } };
+  async function loadAgreements() {
+    const [rows, archives] = await Promise.all([API.get('/agreements/admin'), API.get('/agreements/admin/archives')]);
+    document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Agreement Management</h1><p class="section-sub">Review submitted agreements, track acceptance, completion, and monthly archive records.</p><div class="card" style="margin-top:20px"><div class="card-body">${rows.length ? rows.map(a => `<div style="padding:14px 0;border-bottom:1px solid var(--border)"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><strong>${a.title}</strong><br><span style="font-size:.85rem;color:var(--text-muted)">${a.agreement_number} · ${a.status.replaceAll('_',' ')} · ${fmtPrice(a.price)}</span><p style="font-size:.85rem;color:var(--text-soft)">${a.admin_notes || ''}</p></div><div style="display:flex;gap:6px;align-items:start;flex-wrap:wrap">${['submitted','under_review'].includes(a.status) ? `<button class="btn btn-gold btn-sm" onclick="reviewAgreement('${a.id}','approve')">Approve & send</button><button class="btn btn-outline btn-sm" onclick="reviewAgreement('${a.id}','request_changes')">Request changes</button><button class="btn btn-outline btn-sm" onclick="reviewAgreement('${a.id}','reject')">Reject</button>` : ''}</div></div></div>`).join('') : '<p style="color:var(--text-muted)">No agreements waiting for review.</p>'}</div></div><div class="card" style="margin-top:20px"><div class="card-body"><h3>Monthly archives</h3><div class="form-row"><input class="form-input" type="month" id="archiveMonth"><button class="btn btn-outline" onclick="createAgreementArchive()">Create / refresh archive record</button></div>${archives.map(a => `<p>${a.archive_month}: ${a.agreement_count} completed agreements — ${new Date(a.created_at).toLocaleString()}</p>`).join('') || '<p style="color:var(--text-muted)">No archive records yet.</p>'}</div></div>`;
+  }
+  window.reviewAgreement = async (id, action) => { const note = prompt(action === 'approve' ? 'Optional administrator note:' : 'Reason / requested changes:') || ''; try { await API.put(`/agreements/${id}/review`, { action, note }); Toast.show('Agreement updated'); load('agreements'); } catch(e) { Toast.show(e.message); } };
+  window.createAgreementArchive = async () => { const m = document.getElementById('archiveMonth').value; if (!m) return Toast.show('Choose a month'); try { const result = await API.post(`/agreements/admin/archives/${m}`, {}); Toast.show(`Archive record saved (${result.agreements.length} agreements)`); load('agreements'); } catch(e) { Toast.show(e.message); } };
   load('overview');
 });
