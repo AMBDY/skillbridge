@@ -15,10 +15,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   // Auto-open conversation with ?to= param
   const to = new URLSearchParams(location.search).get('to');
-  if (to && !conversations.length) {
+  const relatedJob = new URLSearchParams(location.search).get('job');
+  const relatedListing = new URLSearchParams(location.search).get('listing');
+  if (to) {
     try {
-      const conv = await API.post('/chat/conversations', { other_user_id: to });
-      conversations.unshift(conv);
+      const conv = await API.post('/chat/conversations', { other_user_id: to, related_job_id: relatedJob || null, related_listing_id: relatedListing || null });
+      if (!conversations.some(item => item.id === conv.id)) conversations.unshift(conv);
       renderConvList(conversations);
       openConv(conv);
     } catch (e) { Toast.show(e.message); }
@@ -66,7 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <button class="btn btn-outline btn-sm" id="acceptBtn">Accept</button>
           <button class="btn btn-outline btn-sm" id="rejectBtn">Reject</button>
           <button class="btn btn-outline btn-sm" id="counterBtn">Counter</button>
-          <button class="btn btn-gold btn-sm" id="agreementBtn">Agreement</button>
+          ${['client', 'admin'].includes(user.role) ? '<button class="btn btn-gold btn-sm" id="agreementBtn">Agreement</button>' : ''}
         </div>
       </div>
       <div class="chat-messages" id="messages"></div>
@@ -107,8 +109,13 @@ document.addEventListener('DOMContentLoaded', async () => {
       input.click();
     });
     document.getElementById('emojiBtn').addEventListener('click', () => {
-      const input = document.getElementById('msgInput');
-      input.value += '😊'; input.focus();
+      document.getElementById('emojiPalette')?.remove();
+      const palette = document.createElement('div');
+      palette.id = 'emojiPalette';
+      palette.style.cssText = 'position:absolute;bottom:58px;left:12px;z-index:5;max-width:280px;padding:8px;background:var(--bg-elev);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-wrap:wrap;gap:4px';
+      palette.innerHTML = '😀 😃 😄 😁 😆 😅 😂 🤣 😊 😇 🙂 🙃 😉 😍 🥰 😘 🤝 👍 👎 🙏 💪 🎉 🔥 ❤️ 💯 ✅ ❌ 📎 💼 🛍️ 🚀'.split(' ').map(emoji => `<button type="button" class="icon-btn emoji-choice">${emoji}</button>`).join('');
+      document.querySelector('.chat-input').append(palette);
+      palette.querySelectorAll('.emoji-choice').forEach(button => button.addEventListener('click', () => { const input = document.getElementById('msgInput'); input.value += button.textContent; input.focus(); palette.remove(); }));
     });
     let mediaRecorder = null, recordedChunks = [];
     const voiceBtn = document.getElementById('voiceBtn');
@@ -152,7 +159,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       socket.emit('message', { conversation_id: activeConv, sender_id: user.user_id, body: `🔁 Counter offer: ${fmtPrice(+v)}`, message_type: 'text' });
       Toast.show('Counter offer sent');
     });
-    document.getElementById('agreementBtn').addEventListener('click', () => location.href = '/agreement.html?conv=' + conv.id + '&worker=' + activeOther);
+    document.getElementById('agreementBtn')?.addEventListener('click', () => location.href = '/agreement.html?conv=' + conv.id + '&worker=' + activeOther + (conv.related_job_id ? '&job=' + conv.related_job_id : '') + (conv.related_listing_id ? '&listing=' + conv.related_listing_id : ''));
   }
 
   function renderMsg(m, myId) {
@@ -170,7 +177,11 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   document.getElementById('messages')?.addEventListener('click', async (e) => {
     const btn = e.target.closest('.msg-translate-btn');
-    if (!btn) return;
+    if (!btn) {
+      const message = e.target.closest('.msg');
+      if (message) message.classList.toggle('expanded');
+      return;
+    }
     const lang = document.getElementById('translateLang')?.value;
     if (!lang) return Toast.show('Pick a language from the dropdown above first');
     const original = decodeURIComponent(btn.dataset.original);
