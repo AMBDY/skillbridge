@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { supabase, createAuthedClient } = require('../utils/db');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, hasPermission } = require('../middleware/auth');
 const { generateQuestions } = require('../services/ai/question-generator');
 const { analyzeCVAsync } = require('../services/ai/cv-analysis');
 const { analyzeVideo } = require('../services/ai/video-analysis');
@@ -19,8 +19,12 @@ function parseList(value) {
   return String(value).split(',').map(s => s.trim()).filter(Boolean);
 }
 
-function isRecruiter(role) { return ['client', 'admin'].includes(role); }
+function isRecruiter(role, req) { return ['client', 'admin'].includes(role) || hasPermission(req, 'post_jobs'); }
 function isAdmin(role) { return role === 'admin'; }
+async function recruitmentPlanRule(plan) {
+  const { data } = await supabase.from('platform_features').select('configuration').eq('feature_key', 'recruitment').maybeSingle();
+  return data?.configuration?.plans?.[plan] || (['premium', 'enterprise'].includes(plan) ? { interview: true, minutes: 30 } : {});
+}
 
 router.get('/jobs', async (req, res) => {
   const { data, error } = await supabase.from('recruitment_jobs').select('*')
@@ -43,7 +47,7 @@ router.get('/jobs/:id', async (req, res) => {
 });
 
 router.post('/jobs', authMiddleware, async (req, res) => {
-  if (!isRecruiter(req.user.role)) return res.status(403).json({ error: 'Only recruiters/clients can create recruitment jobs.' });
+  if (!isRecruiter(req.user.role, req)) return res.status(403).json({ error: 'Only recruiters/clients can create recruitment jobs.' });
 
   const c = authedClient(req);
   const payload = req.body || {};
@@ -93,7 +97,7 @@ router.post('/jobs', authMiddleware, async (req, res) => {
 });
 
 router.get('/recruiter/jobs', authMiddleware, async (req, res) => {
-  if (!isRecruiter(req.user.role)) return res.status(403).json({ error: 'Recruiter access required.' });
+  if (!isRecruiter(req.user.role, req)) return res.status(403).json({ error: 'Recruiter access required.' });
   const c = authedClient(req);
   const { data, error } = await c.from('recruitment_jobs').select('*').eq('recruiter_id', req.user.id).order('created_at', { ascending: false });
   if (error) return res.status(400).json({ error: error.message });
@@ -101,23 +105,28 @@ router.get('/recruiter/jobs', authMiddleware, async (req, res) => {
 });
 
 router.put('/recruiter/jobs/:id', authMiddleware, async (req, res) => {
-  if (!isRecruiter(req.user.role)) return res.status(403).json({ error: 'Recruiter access required.' });
+  if (!isRecruiter(req.user.role, req)) return res.status(403).json({ error: 'Recruiter access required.' });
   const c = authedClient(req);
   const fields = ['title','company_name','description','responsibilities','required_skills','experience_required','education_requirement','salary','location','deadline','ai_plan','video_enabled','question_mode','application_fields'];
   const changes = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => fields.includes(key)));
   if (!Object.keys(changes).length) return res.status(400).json({ error: 'No editable job fields supplied.' });
   const { data, error } = await c.from('recruitment_jobs').update({ ...changes, approval_status: 'pending' }).eq('id', req.params.id).eq('recruiter_id', req.user.id).select().single();
-  if (error) return res.status(400).json({ error: error.message }); res.json(data);
+  if (error) return res.status(400).json({ error: error.message });
+  if (Array.isArray(req.body?.questions)) {
+    await c.from('recruitment_questions').delete().eq('job_id', data.id);
+    if (req.body.questions.length) await c.from('recruitment_questions').insert(req.body.questions.map(q => ({ job_id: data.id, question: q.question, duration_limit: Number(q.duration_limit || 120), attempts_allowed: Number(q.attempts_allowed || 1) })));
+  }
+  res.json(data);
 });
 
 router.delete('/recruiter/jobs/:id', authMiddleware, async (req, res) => {
-  if (!isRecruiter(req.user.role)) return res.status(403).json({ error: 'Recruiter access required.' });
+  if (!isRecruiter(req.user.role, req)) return res.status(403).json({ error: 'Recruiter access required.' });
   const { data, error } = await authedClient(req).from('recruitment_jobs').delete().eq('id', req.params.id).eq('recruiter_id', req.user.id).select().single();
   if (error) return res.status(400).json({ error: error.message }); if (!data) return res.status(404).json({ error: 'Recruitment job not found.' }); res.json({ ok: true });
 });
 
 router.get('/recruiter/applicants', authMiddleware, async (req, res) => {
-  if (!isRecruiter(req.user.role)) return res.status(403).json({ error: 'Recruiter access required.' });
+  if (!isRecruiter(req.user.role, req)) return res.status(403).json({ error: 'Recruiter access required.' });
   const c = authedClient(req);
   const { job_id } = req.query;
   let q = c.from('recruitment_applications')
@@ -141,12 +150,20 @@ router.post('/apply/:jobId', authMiddleware, async (req, res) => {
   const payload = req.body || {};
   const fields = Array.isArray(job.application_fields) ? job.application_fields : [];
   const answers = payload.answers && typeof payload.answers === 'object' ? payload.answers : {};
+  const questionAnswers = payload.question_answers && typeof payload.question_answers === 'object' ? payload.question_answers : {};
   const missingField = fields.find(field => field.required && !String(answers[field.key] || '').trim());
   if (missingField) return res.status(400).json({ error: `${missingField.label || missingField.key} is required for this job.` });
+  const { data: questions } = await supabase.from('recruitment_questions').select('id, question, duration_limit').eq('job_id', job.id);
+  const missingQuestion = (questions || []).find(question => !String(questionAnswers[question.id] || '').trim());
+  if (missingQuestion) return res.status(400).json({ error: 'Please answer every screening question.' });
+  const planRule = await recruitmentPlanRule(job.ai_plan);
+  const planInterview = !!planRule.interview && job.video_enabled !== 'disabled';
   const { data: application, error } = await c.from('recruitment_applications').insert({
     job_id: job.id, applicant_id: req.user.id,
     full_name: payload.full_name, email: payload.email, phone: payload.phone, cover_note: payload.cover_note,
-    application_data: answers
+    application_data: answers, question_answers: questionAnswers,
+    interview_due_at: planInterview ? new Date(Date.now() + Number(planRule.minutes || 30) * 60 * 1000).toISOString() : null,
+    interview_status: planInterview ? 'pending' : 'not_required'
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
 
@@ -184,7 +201,7 @@ router.post('/apply/:jobId', authMiddleware, async (req, res) => {
   });
 
   await notify(c, { userId: job.recruiter_id, type: 'new_application', title: 'New application received', body: `Someone applied to "${job.title}"`, link: `/recruiter-applicants.html?job=${job.id}` });
-  res.json({ application });
+  res.json({ application, interview: planInterview ? { required: true, due_at: application.interview_due_at, mode: 'video' } : { required: false } });
 });
 
 router.get('/applications/mine', authMiddleware, async (req, res) => {
@@ -195,8 +212,31 @@ router.get('/applications/mine', authMiddleware, async (req, res) => {
   res.json(data || []);
 });
 
+router.get('/applications/:id/interview', authMiddleware, async (req, res) => {
+  const c = authedClient(req);
+  const { data: application, error } = await c.from('recruitment_applications').select('*, recruitment_jobs(*)').eq('id', req.params.id).eq('applicant_id', req.user.id).maybeSingle();
+  if (error) return res.status(400).json({ error: error.message });
+  if (!application) return res.status(404).json({ error: 'Interview application not found.' });
+  if (application.interview_status !== 'pending') return res.status(400).json({ error: 'No pending interview for this application.' });
+  if (new Date(application.interview_due_at) < new Date()) { await c.from('recruitment_applications').update({ interview_status: 'expired' }).eq('id', application.id); return res.status(400).json({ error: 'The interview time has expired.' }); }
+  const { data: questions } = await supabase.from('recruitment_questions').select('*').eq('job_id', application.job_id);
+  res.json({ application, questions: questions || [] });
+});
+
+router.post('/applications/:id/interview', authMiddleware, async (req, res) => {
+  const c = authedClient(req); const { response_mode, response_url } = req.body || {};
+  if (!['video', 'audio'].includes(response_mode) || !response_url) return res.status(400).json({ error: 'A video or audio response is required.' });
+  const { data: application } = await c.from('recruitment_applications').select('*').eq('id', req.params.id).eq('applicant_id', req.user.id).maybeSingle();
+  if (!application || application.interview_status !== 'pending') return res.status(400).json({ error: 'No pending interview for this application.' });
+  if (new Date(application.interview_due_at) < new Date()) { await c.from('recruitment_applications').update({ interview_status: 'expired' }).eq('id', req.params.id); return res.status(400).json({ error: 'The interview time has expired.' }); }
+  const { data, error } = await c.from('recruitment_interviews').upsert({ application_id: application.id, response_mode, response_url, submitted_at: new Date().toISOString() }, { onConflict: 'application_id' }).select().single();
+  if (error) return res.status(400).json({ error: error.message });
+  await c.from('recruitment_applications').update({ interview_status: 'completed' }).eq('id', application.id);
+  res.json(data);
+});
+
 router.put('/applications/:id/status', authMiddleware, async (req, res) => {
-  if (!isRecruiter(req.user.role)) return res.status(403).json({ error: 'Recruiter access required.' });
+  if (!isRecruiter(req.user.role, req)) return res.status(403).json({ error: 'Recruiter access required.' });
   const c = authedClient(req);
   const { status } = req.body;
   if (!['reviewing', 'shortlisted', 'rejected', 'hired'].includes(status)) return res.status(400).json({ error: 'Invalid application status.' });
@@ -206,7 +246,7 @@ router.put('/applications/:id/status', authMiddleware, async (req, res) => {
 });
 
 router.put('/applications/:id/interview', authMiddleware, async (req, res) => {
-  if (!isRecruiter(req.user.role)) return res.status(403).json({ error: 'Recruiter access required.' });
+  if (!isRecruiter(req.user.role, req)) return res.status(403).json({ error: 'Recruiter access required.' });
   const c = authedClient(req);
   const { interview_at, interview_link, interview_notes } = req.body;
   const { data, error } = await c.from('recruitment_applications').update({ interview_at, interview_link, interview_notes }).eq('id', req.params.id).select().single();
