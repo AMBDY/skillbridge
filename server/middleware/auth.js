@@ -23,12 +23,14 @@ async function authMiddleware(req, res, next) {
     if (profile?.account_status === 'banned') {
       return res.status(403).json({ error: 'This account has been banned. Contact support if you believe this is a mistake.' });
     }
+    const { data: roleDefinition } = profile?.role ? await supabase.from('platform_roles').select('permissions').eq('role_key', profile.role).maybeSingle() : { data: null };
     req.user = {
       id: userId,
       email: profile?.email || data.user.email || '',
       role: profile?.role || '',
       display_name: profile?.display_name || '',
-      account_status: profile?.account_status || 'active'
+      account_status: profile?.account_status || 'active',
+      permissions: roleDefinition?.permissions || []
     };
     next();
   } catch (e) {
@@ -36,9 +38,13 @@ async function authMiddleware(req, res, next) {
   }
 }
 
+function hasPermission(req, permission) {
+  return req.user?.role === 'admin' || req.user?.permissions?.includes('all') || req.user?.permissions?.includes(permission);
+}
+
 function adminOnly(req, res, next) {
   if (!req.user || req.user.role !== 'admin') return res.status(403).json({ error: 'Admin access required' });
   next();
 }
 
-module.exports = { authMiddleware, adminOnly };
+module.exports = { authMiddleware, adminOnly, hasPermission };
