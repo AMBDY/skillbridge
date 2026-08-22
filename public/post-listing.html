@@ -11,15 +11,8 @@
 <div class="auth-wrap" style="align-items:flex-start;padding-top:48px">
   <div class="auth-card" style="max-width:640px">
     <h1 class="auth-title">Post a Listing</h1>
-    <p class="auth-sub">Offer a service (Hire Talent) or sell a product (Shop Products).</p>
-
-    <div class="form-group">
-      <label class="form-label">Listing type</label>
-      <select class="form-select" id="listingType">
-        <option value="service">Service (Hire Talent)</option>
-        <option value="product">Product (Shop)</option>
-      </select>
-    </div>
+    <p class="auth-sub">Create a product listing for items you want to sell.</p>
+    <input type="hidden" id="listingType" value="product">
 
     <form id="listingForm">
       <div class="form-group"><label class="form-label">Category</label><select class="form-select" id="catSel" required></select></div>
@@ -41,12 +34,38 @@
           <select class="form-select" name="gender"><option value="">N/A</option><option>Male</option><option>Female</option><option>Unisex</option></select>
         </div>
       </div>
+      <details class="card prod-only" style="padding:14px;margin:16px 0" open><summary style="cursor:pointer;font-weight:600">How this product is fulfilled</summary>
+        <div class="grid grid-2" style="margin-top:14px">
+          <div class="form-group"><label class="form-label">Fulfilment type</label><select class="form-select" name="fulfillment_type" id="fulfillmentType"><option value="ready_made">Ready-made — dispatch from stock</option><option value="made_to_order">Made-to-order</option><option value="custom_design">Custom design request</option><option value="made_to_order_measurements">Made-to-order with measurements</option></select></div>
+          <div class="form-group"><label class="form-label">Production / preparation days</label><input class="form-input" type="number" min="0" name="production_days" placeholder="e.g. 7"></div>
+          <div class="form-group" id="sizeSupportWrap"><label class="form-label">Supported standard sizes</label><input class="form-input" name="supported_sizes" placeholder="XS, S, M, L, XL, Custom"></div>
+          <div class="form-group" id="measurementTemplateWrap" style="display:none"><label class="form-label">Measurement template</label><select class="form-select" name="measurement_template_id" id="measurementTemplate"><option value="">No template selected</option></select></div>
+        </div>
+        <p style="font-size:.84rem;color:var(--text-muted)">Measurement templates are configured by the superadmin. Buyers can submit a versioned custom specification only when this product type supports it.</p>
+      </details>
       <div class="form-group">
         <label class="form-label">Images</label>
-        <input class="form-input" type="file" id="imagesInput" accept="image/*" multiple required>
+        <input class="form-input" type="file" id="imagesInput" accept="image/*" multiple>
         <div id="imagesPreview" style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
       <div class="form-group"><label class="form-label">Video (optional)</label><input class="form-input" type="file" id="videoInput" accept="video/*"></div>
+      <details class="card prod-only" style="padding:14px;margin:16px 0" open><summary style="cursor:pointer;font-weight:600">Product details, inventory & delivery</summary>
+        <div class="grid grid-2" style="margin-top:14px">
+          <div class="form-group"><label class="form-label">Condition</label><select class="form-select" name="detail_condition"><option value="new">New</option><option value="used_like_new">Used — like new</option><option value="used_good">Used — good</option><option value="refurbished">Refurbished</option></select></div>
+          <div class="form-group"><label class="form-label">SKU</label><input class="form-input" name="detail_sku"></div>
+          <div class="form-group"><label class="form-label">Warranty</label><input class="form-input" name="detail_warranty" placeholder="e.g. 12 months"></div>
+          <div class="form-group"><label class="form-label">Weight / dimensions</label><input class="form-input" name="detail_dimensions" placeholder="e.g. 2kg; 30 × 20 × 10cm"></div>
+          <div class="form-group"><label class="form-label">Shipping method</label><select class="form-select" name="detail_shipping"><option>Courier delivery</option><option>Pickup</option><option>Courier or pickup</option><option>Digital delivery</option></select></div>
+          <div class="form-group"><label class="form-label">Delivery fee</label><input class="form-input" type="number" name="detail_delivery_fee" min="0"></div>
+          <div class="form-group"><label class="form-label">Returns policy</label><select class="form-select" name="detail_returns"><option value="no_returns">No returns</option><option value="7_days">7 days</option><option value="14_days">14 days</option><option value="30_days">30 days</option></select></div>
+          <div class="form-group"><label class="form-label">Visibility</label><select class="form-select" name="detail_visibility"><option value="public">Public</option><option value="unlisted">Unlisted</option><option value="draft">Draft</option></select></div>
+          <div class="form-group"><label class="form-label">Pre-order</label><select class="form-select" name="detail_preorder"><option value="false">Not available</option><option value="true">Available by pre-order</option></select></div>
+          <div class="form-group"><label class="form-label">Wholesale / bulk pricing</label><input class="form-input" name="detail_wholesale" placeholder="e.g. 10+ units: ₦2,000 each"></div>
+        </div>
+        <div class="form-group"><label class="form-label">Variations (one per line: name | option | price adjustment | stock)</label><textarea class="form-textarea" name="detail_variations" rows="3" placeholder="Size | Large | 0 | 5"></textarea></div>
+        <div class="form-group"><label class="form-label">Specifications, package contents, safety/regulatory information</label><textarea class="form-textarea" name="detail_specifications" rows="4" placeholder="Add category-specific technical, fashion, food, cosmetic, or electronics information."></textarea></div>
+        <label style="display:flex;gap:8px"><input type="checkbox" name="detail_declaration" required> I confirm this product information is accurate and the item is lawful to sell.</label>
+      </details>
       <button type="submit" class="btn btn-gold btn-block btn-lg">Submit for Approval</button>
     </form>
   </div>
