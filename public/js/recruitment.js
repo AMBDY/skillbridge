@@ -2,7 +2,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (!Auth.isLoggedIn()) { location.href = '/signin.html'; return; }
   const main = document.getElementById('recruitMain');
   const user = Auth.user();
-  const isClient = user?.role === 'client';
+  const isClient = ['client', 'admin'].includes(user?.role);
 
   if (isClient) {
     main.innerHTML = `
@@ -13,7 +13,10 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
         <a href="/post-job.html" class="btn btn-gold">+ Post Job Recruitment</a>
       </div>
-      <div id="clientJobs" style="margin-top:24px"></div>`;
+      <div id="clientJobs" style="margin-top:24px"></div>
+      <h2 style="font-size:1.5rem;margin:32px 0 12px">All approved job recruitment listings</h2>
+      <p class="section-sub">These listings are visible to every role. Open a job to read the full description, then select Apply to complete the employer’s required form.</p>
+      <div id="openJobs"></div>`;
 
     async function renderClientJobs() {
       const mine = await API.get('/jobs/mine').catch(() => []);
@@ -44,6 +47,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       catch (e) { Toast.show(e.message); }
     };
     renderClientJobs();
+    const publicJobs = await API.get('/jobs').catch(() => []);
+    document.getElementById('openJobs').innerHTML = publicJobs.length ? publicJobs.map(j => `
+      <div class="card" style="margin-bottom:12px"><div class="card-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px"><div><a href="/job.html?id=${j.id}" style="font-weight:600;font-size:1.05rem">${j.title}</a><div class="card-meta"><span>${j.categories?.name || ''}</span><span>•</span><span>${fmtPrice(j.budget || 0)}</span><span>•</span><span>${j.location || j.state || 'Remote'}</span></div></div><div style="display:flex;gap:8px"><a href="/job.html?id=${j.id}" class="btn btn-outline btn-sm">View full job</a><a href="/apply-job.html?job=${j.id}" class="btn btn-gold btn-sm">Apply</a></div></div></div>`).join('') : '<p style="color:var(--text-muted)">No approved jobs right now.</p>';
     return;
   }
 
