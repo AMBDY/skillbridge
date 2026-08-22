@@ -38,6 +38,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   fulfillment?.addEventListener('change', toggleFulfillment);
   catSel.addEventListener('change', loadMeasurementTemplates);
   toggleFulfillment();
+  FormControls.apply('product_listing', document.getElementById('listingForm'));
 
   const imagesInput = document.getElementById('imagesInput');
   const imagesPreview = document.getElementById('imagesPreview');
