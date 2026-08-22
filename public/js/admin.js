@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     { id: 'kyc', label: 'KYC Review' },
     { id: 'jobs', label: 'Job Moderation' },
       { id: 'listings', label: 'Listings Moderation' },
+      { id: 'catalog', label: 'Categories & Forms' },
       { id: 'logistics', label: 'Orders & Logistics' },
     { id: 'messages', label: 'Messages' },
     { id: 'recruitment', label: 'Recruitment Jobs' },
@@ -56,6 +57,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (sec === 'kyc') return await loadKyc();
       if (sec === 'jobs') return await loadJobs();
         if (sec === 'listings') return await loadListings();
+        if (sec === 'catalog') return await loadCatalogControls();
         if (sec === 'logistics') return await loadLogistics();
       if (sec === 'messages') return await loadMessages();
       if (sec === 'recruitment') return await loadRecruitmentJobs();
@@ -225,7 +227,7 @@ document.addEventListener('DOMContentLoaded', async () => {
             <p style="margin-top:6px;color:var(--text-soft);font-size:0.9rem">${l.description || ''}</p>
             ${l.images?.length ? `<div style="display:flex;gap:6px;margin-top:8px">${l.images.slice(0, 4).map(img => `<img src="${img}" style="width:60px;height:60px;object-fit:cover;border-radius:6px">`).join('')}</div>` : ''}
           </div>
-          <div style="display:flex;gap:8px;align-items:start;flex-wrap:wrap">${actionsHtml}</div>
+          <div style="display:flex;gap:8px;align-items:start;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="viewListingModeration('${l.type}','${l.id}')">View full listing</button>${actionsHtml}</div>
         </div>
       </div></div>`;
     }
@@ -271,6 +273,32 @@ document.addEventListener('DOMContentLoaded', async () => {
       load('listings');
     });
   };
+  window.viewListingModeration = async (type, id) => {
+    try {
+      const item = await API.get(`/marketplace/listing/${type === 'products' ? 'product' : 'service'}/${id}`);
+      const modal = document.createElement('div'); modal.className = 'modal-overlay'; modal.style.overflow = 'auto';
+      modal.innerHTML = `<div class="card" style="max-width:820px;margin:30px auto"><div class="card-body"><div style="display:flex;justify-content:space-between;gap:12px"><h2>${item.title}</h2><button class="btn btn-outline btn-sm" id="closeListingView">Close</button></div><p class="section-sub">${item.product_code || ''} · ${item.categories?.name || 'Uncategorised'} · ${fmtPrice(item.price || 0)}</p><p style="white-space:pre-wrap;color:var(--text-soft)">${item.description || 'No description provided.'}</p><div class="grid grid-2" style="margin-top:16px"><div><strong>Seller</strong><p>${item.profiles?.display_name || 'Unknown'}<br>${item.location || ''}</p></div><div><strong>Details</strong><p>${Object.entries(item.details || {}).filter(([key]) => key !== 'variations').map(([key,value]) => `${key}: ${typeof value === 'object' ? JSON.stringify(value) : value}`).join('<br>') || 'None'}</p></div></div>${item.images?.length ? `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">${item.images.map(src => `<img src="${src}" style="width:130px;height:130px;object-fit:cover;border-radius:8px">`).join('')}</div>` : ''}</div></div>`;
+      document.body.append(modal); modal.querySelector('#closeListingView').onclick = () => modal.remove(); modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    } catch (e) { Toast.show(e.message); }
+  };
+
+  async function loadCatalogControls() {
+    const [categories, controls] = await Promise.all([API.get('/admin/categories'), API.get('/admin/form-controls')]);
+    const fields = {
+      product_listing: ['category_id','title','description','price','stock','location','brand','size','color','gender','fulfillment_type','production_days','supported_sizes','measurement_template_id','detail_sku','detail_dimensions','detail_shipping','detail_delivery_fee','detail_returns','detail_variations','detail_specifications'],
+      recruitment_posting: ['title','company_name','description','responsibilities','required_skills','experience_required','education_requirement','salary','location','deadline','ai_plan','video_enabled','question_mode','manual_questions']
+      ,profile_edit: ['display_name','first_name','middle_name','last_name','phone','country','state','city','address','bank_name','account_number','account_holder_name','availability','response_time_hours','about','cover_letter','profile_sections']
+    };
+    const controlMap = new Map(controls.map(c => [`${c.form_key}:${c.field_key}`, c]));
+    const controlsHtml = Object.entries(fields).map(([formKey, keys]) => `<details class="card" style="padding:14px;margin-top:12px"><summary style="cursor:pointer;font-weight:600">${formKey.replaceAll('_',' ')} fields</summary><p style="color:var(--text-muted);font-size:.9rem">Visibility changes the public form. Required changes the browser requirement; server-required fields remain protected.</p>${keys.map((key,index) => { const c = controlMap.get(`${formKey}:${key}`) || {}; return `<div class="grid grid-2" style="border-top:1px solid var(--border);padding:10px 0"><div><strong>${key}</strong><input class="form-input form-control-label" data-form="${formKey}" data-key="${key}" value="${c.label || ''}" placeholder="Custom label (optional)"><input class="form-input form-control-help" data-form="${formKey}" data-key="${key}" value="${c.help_text || ''}" placeholder="Help text (optional)" style="margin-top:6px"></div><div style="display:flex;gap:14px;align-items:center"><label><input type="checkbox" class="form-control-visible" data-form="${formKey}" data-key="${key}" ${c.is_visible !== false ? 'checked' : ''}> Visible</label><label><input type="checkbox" class="form-control-required" data-form="${formKey}" data-key="${key}" ${c.is_required ? 'checked' : ''}> Required</label><button class="btn btn-outline btn-sm" onclick="saveFormControl('${formKey}','${key}',${index})">Save</button></div></div>`; }).join('')}</details>`).join('');
+    document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Categories & Form Controls</h1><p class="section-sub">Manage marketplace categories and decide which supported product/recruitment fields users see, how they are labelled, and whether they are compulsory.</p><div class="card" style="margin-top:20px"><div class="card-body"><h3>Add category</h3><div class="grid grid-2"><input class="form-input" id="catName" placeholder="Category name"><select class="form-select" id="catEcosystem"><option value="shop">Shop / products</option><option value="hire">Hire / services</option><option value="jobs">Jobs</option></select><input class="form-input" id="catSlug" placeholder="Optional URL slug"><input class="form-input" id="catIcon" placeholder="Optional icon / emoji"><textarea class="form-textarea" id="catDescription" placeholder="Description"></textarea><input class="form-input" id="catSort" type="number" placeholder="Display order"></div><button class="btn btn-gold btn-sm" onclick="addCategoryAdmin()">Add category</button></div></div><h3 style="margin-top:24px">Existing categories</h3>${categories.map(c => `<div class="card" style="padding:12px;margin-top:8px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><strong>${c.name}</strong> <span class="badge badge-kyc">${c.ecosystem}</span><div class="card-meta">${c.slug} · ${c.is_active === false ? 'Hidden' : 'Visible'}</div><p>${c.description || ''}</p></div><div><button class="btn btn-outline btn-sm" onclick="editCategoryAdmin('${c.id}')">Edit</button><button class="btn btn-outline btn-sm" onclick="toggleCategoryAdmin('${c.id}',${c.is_active !== false})">${c.is_active === false ? 'Show' : 'Hide'}</button><button class="btn btn-outline btn-sm" onclick="deleteCategoryAdmin('${c.id}')">Delete</button></div></div></div>`).join('')}${controlsHtml}`;
+    window.__adminCategories = categories;
+  }
+  window.addCategoryAdmin = async () => { try { await API.post('/admin/categories',{name:document.getElementById('catName').value.trim(),ecosystem:document.getElementById('catEcosystem').value,slug:document.getElementById('catSlug').value.trim(),icon:document.getElementById('catIcon').value.trim(),description:document.getElementById('catDescription').value.trim(),sort_order:Number(document.getElementById('catSort').value||0)});Toast.show('Category added');load('catalog')}catch(e){Toast.show(e.message)} };
+  window.editCategoryAdmin = async id => { const c=(window.__adminCategories||[]).find(x=>x.id===id);if(!c)return;const name=prompt('Category name',c.name);if(name===null)return;const description=prompt('Description',c.description||'');try{await API.put(`/admin/categories/${id}`,{name,description});Toast.show('Category updated');load('catalog')}catch(e){Toast.show(e.message)} };
+  window.toggleCategoryAdmin = async (id, active) => { try { await API.put(`/admin/categories/${id}`,{is_active:!active});load('catalog') } catch(e){Toast.show(e.message)} };
+  window.deleteCategoryAdmin = async id => { if(!confirm('Delete this unused category?'))return;try{await API.del(`/admin/categories/${id}`);load('catalog')}catch(e){Toast.show(e.message)} };
+  window.saveFormControl = async (formKey, fieldKey, sort) => { const selector = value => document.querySelector(`${value}[data-form="${formKey}"][data-key="${fieldKey}"]`); try { await API.put(`/admin/form-controls/${formKey}/${fieldKey}`,{label:selector('.form-control-label').value.trim(),help_text:selector('.form-control-help').value.trim(),is_visible:selector('.form-control-visible').checked,is_required:selector('.form-control-required').checked,sort_order:sort});Toast.show('Form field updated'); } catch(e){Toast.show(e.message)} };
 
   async function loadLogistics() {
     const [providers, orders, templates] = await Promise.all([API.get('/logistics/providers'), API.get('/orders/admin/all'), API.get('/orders/admin/templates')]);
