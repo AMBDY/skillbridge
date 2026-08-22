@@ -187,6 +187,28 @@ const Upload = {
   }
 };
 
+const FormControls = {
+  async apply(formKey, root = document) {
+    try {
+      const controls = await API.get(`/marketplace/form-controls/${encodeURIComponent(formKey)}`);
+      controls.forEach(control => {
+        const field = root.querySelector(`[name="${CSS.escape(control.field_key)}"]`);
+        if (!field) return;
+        const group = field.closest('.form-group') || field.closest('details') || field.parentElement;
+        if (group) group.style.display = control.is_visible === false ? 'none' : '';
+        field.required = control.is_required === true;
+        const label = group?.querySelector('label.form-label');
+        if (label && control.label) label.textContent = control.label + (control.is_required ? ' *' : '');
+        if (group && control.help_text) {
+          let help = group.querySelector('.admin-field-help');
+          if (!help) { help = document.createElement('small'); help.className = 'admin-field-help'; help.style.cssText = 'color:var(--text-muted);display:block;margin-top:4px'; group.appendChild(help); }
+          help.textContent = control.help_text;
+        }
+      });
+    } catch { /* controls are optional; keep the form functional */ }
+  }
+};
+
 async function renderAdSlot(selector, page) {
   const el = document.querySelector(selector);
   if (!el) return;
@@ -291,6 +313,7 @@ function renderNav() {
           </a>
           <a href="/chat.html" class="icon-btn" title="Messages">💬</a>
           <a href="/orders.html" class="icon-btn" title="Product orders">📦</a>
+          <a href="/edit-profile.html" class="icon-btn" title="Edit my profile">✏️</a>
            ${featureEnabled('recruitment') ? `<a href="${recruitHref}" class="btn btn-outline btn-sm">Job Recruitment</a>` : ''}
           <a href="/dashboard.html" class="btn btn-outline btn-sm">Dashboard</a>
           ${user && user.role === 'admin' ? '<a href="/admin.html" class="btn btn-gold btn-sm">Admin</a>' : ''}
