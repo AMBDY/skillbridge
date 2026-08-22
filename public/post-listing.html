@@ -52,7 +52,13 @@
       <details class="card prod-only" style="padding:14px;margin:16px 0" open><summary style="cursor:pointer;font-weight:600">Product details, inventory & delivery</summary>
         <div class="grid grid-2" style="margin-top:14px">
           <div class="form-group"><label class="form-label">Condition</label><select class="form-select" name="detail_condition"><option value="new">New</option><option value="used_like_new">Used — like new</option><option value="used_good">Used — good</option><option value="refurbished">Refurbished</option></select></div>
-          <div class="form-group"><label class="form-label">SKU</label><input class="form-input" name="detail_sku"></div>
+          <div class="form-group">
+            <label class="form-label">SKU</label>
+            <input class="form-input" name="detail_sku" placeholder="e.g. DRESS-RED-M">
+            <small style="color:var(--text-muted)">
+            Optional internal product code for identifying stock, sizes, colours, or variations.
+            </small>
+          </div>
           <div class="form-group"><label class="form-label">Warranty</label><input class="form-input" name="detail_warranty" placeholder="e.g. 12 months"></div>
           <div class="form-group"><label class="form-label">Weight / dimensions</label><input class="form-input" name="detail_dimensions" placeholder="e.g. 2kg; 30 × 20 × 10cm"></div>
           <div class="form-group"><label class="form-label">Shipping method</label><select class="form-select" name="detail_shipping"><option>Courier delivery</option><option>Pickup</option><option>Courier or pickup</option><option>Digital delivery</option></select></div>
