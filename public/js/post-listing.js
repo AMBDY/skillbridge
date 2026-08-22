@@ -21,6 +21,23 @@ document.addEventListener('DOMContentLoaded', async () => {
   typeSel.addEventListener('change', () => { loadCategories(); toggleFields(); });
   await loadCategories();
   toggleFields();
+  const fulfillment = document.getElementById('fulfillmentType');
+  async function loadMeasurementTemplates() {
+    if (!fulfillment || !['custom_design', 'made_to_order_measurements'].includes(fulfillment.value)) return;
+    const templates = await API.get(`/orders/measurement-templates?category_id=${encodeURIComponent(catSel.value || '')}`).catch(() => []);
+    const select = document.getElementById('measurementTemplate');
+    select.innerHTML = '<option value="">No template selected</option>' + templates.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  }
+  function toggleFulfillment() {
+    if (!fulfillment) return;
+    const custom = ['custom_design', 'made_to_order_measurements'].includes(fulfillment.value);
+    document.getElementById('measurementTemplateWrap').style.display = custom ? '' : 'none';
+    document.getElementById('sizeSupportWrap').style.display = fulfillment.value === 'ready_made' ? '' : 'none';
+    if (custom) loadMeasurementTemplates();
+  }
+  fulfillment?.addEventListener('change', toggleFulfillment);
+  catSel.addEventListener('change', loadMeasurementTemplates);
+  toggleFulfillment();
 
   const imagesInput = document.getElementById('imagesInput');
   const imagesPreview = document.getElementById('imagesPreview');
@@ -56,9 +73,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.querySelector('.auth-title').textContent = 'Edit Product Listing';
     document.querySelector('.auth-sub').textContent = 'Replace any information or media. The updated listing will wait for admin approval.';
     document.querySelector('#listingForm button[type="submit"]').textContent = 'Submit Update for Approval';
-    ['title','description','price','stock','location','brand','size','color','gender'].forEach(key => { if (document.getElementById('listingForm').elements[key] && listing[key] != null) document.getElementById('listingForm').elements[key].value = listing[key]; });
+    ['title','description','price','stock','location','brand','size','color','gender','fulfillment_type','production_days'].forEach(key => { if (document.getElementById('listingForm').elements[key] && listing[key] != null) document.getElementById('listingForm').elements[key].value = listing[key]; });
     catSel.value = listing.category_id || catSel.value;
     uploadedImages = [...(listing.images || [])]; renderImages();
+    if (listing.supported_sizes?.length) document.getElementById('listingForm').elements.supported_sizes.value = listing.supported_sizes.join(', ');
+    toggleFulfillment();
+    if (listing.measurement_template_id) { await loadMeasurementTemplates(); document.getElementById('measurementTemplate').value = listing.measurement_template_id; }
     Object.entries(listing.details || {}).forEach(([key, value]) => { const input = document.getElementById('listingForm').elements[`detail_${key}`]; if (input && typeof value !== 'object') input.value = value; });
     if (Array.isArray(listing.details?.variations)) document.getElementById('listingForm').elements.detail_variations.value = listing.details.variations.map(v => [v.name, v.option, v.price_adjustment, v.stock].join(' | ')).join('\n');
   }
@@ -72,6 +92,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     data.images = uploadedImages;
     data.details = Object.fromEntries(Array.from(e.target.querySelectorAll('[name^="detail_"]')).map(input => [input.name.slice(7), input.type === 'checkbox' ? input.checked : input.value]));
     data.details.variations = String(data.details.variations || '').split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [name, option, price_adjustment, stock] = line.split('|').map(v => v.trim()); return { name, option, price_adjustment: Number(price_adjustment || 0), stock: Number(stock || 0) }; });
+    data.supported_sizes = String(data.supported_sizes || '').split(',').map(size => size.trim()).filter(Boolean);
     if (data.delivery_days) data.delivery_days = +data.delivery_days;
     if (data.stock) data.stock = +data.stock;
 
