@@ -11,7 +11,8 @@ document.addEventListener('DOMContentLoaded', async () => {
     { id: 'users', label: 'Users' },
     { id: 'kyc', label: 'KYC Review' },
     { id: 'jobs', label: 'Job Moderation' },
-    { id: 'listings', label: 'Listings Moderation' },
+      { id: 'listings', label: 'Listings Moderation' },
+      { id: 'logistics', label: 'Orders & Logistics' },
     { id: 'messages', label: 'Messages' },
     { id: 'recruitment', label: 'Recruitment Jobs' },
     { id: 'disputes', label: 'Disputes' },
@@ -54,7 +55,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (sec === 'users') return await loadUsers();
       if (sec === 'kyc') return await loadKyc();
       if (sec === 'jobs') return await loadJobs();
-      if (sec === 'listings') return await loadListings();
+        if (sec === 'listings') return await loadListings();
+        if (sec === 'logistics') return await loadLogistics();
       if (sec === 'messages') return await loadMessages();
       if (sec === 'recruitment') return await loadRecruitmentJobs();
       if (sec === 'disputes') return await loadDisputes();
@@ -269,6 +271,22 @@ document.addEventListener('DOMContentLoaded', async () => {
       load('listings');
     });
   };
+
+  async function loadLogistics() {
+    const [providers, orders, templates] = await Promise.all([API.get('/logistics/providers'), API.get('/orders/admin/all'), API.get('/orders/admin/templates')]);
+    document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Orders & Logistics</h1><p class="section-sub">Provider credentials are server-side configuration only. Do not enter secret keys in browser-visible fields.</p>
+      <div class="card" style="margin:16px 0"><div class="card-body"><h3>Add logistics company</h3><div class="grid grid-2"><div class="form-group"><label class="form-label">Company name</label><input class="form-input" id="lpName"></div><div class="form-group"><label class="form-label">Provider code</label><input class="form-input" id="lpCode" placeholder="ABC_LOGISTICS"></div><div class="form-group"><label class="form-label">Contact email</label><input class="form-input" id="lpEmail"></div><div class="form-group"><label class="form-label">Contact phone</label><input class="form-input" id="lpPhone"></div><div class="form-group"><label class="form-label">API base URL (optional)</label><input class="form-input" id="lpApi"></div><div class="form-group"><label class="form-label">Integration</label><select class="form-select" id="lpMode"><option value="manual">Manual tracking</option><option value="api">API integration</option></select></div></div><button class="btn btn-gold btn-sm" onclick="addLogisticsProvider()">Add company</button></div></div>
+      <h3>Logistics companies</h3>${providers.length?providers.map(p=>`<div class="card" style="margin:8px 0"><div class="card-body" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><strong>${p.company_name}</strong> <span class="badge badge-kyc">${p.integration_mode}</span><div class="card-meta">${p.provider_code} · ${p.contact_email||p.contact_phone||'No contact'}</div></div><div><button class="btn btn-outline btn-sm" onclick="editLogisticsProvider('${p.id}')">Edit</button><button class="btn btn-outline btn-sm" onclick="removeLogisticsProvider('${p.id}')">Remove</button></div></div></div>`).join(''):'<p>No providers configured.</p>'}
+      <h3 style="margin-top:28px">Transaction center</h3>${orders.map(o=>{const i=o.product_order_items?.[0]||{};return `<div class="card" style="margin:8px 0"><div class="card-body" style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><div><strong>${i.title_snapshot||'Order'}</strong><div class="card-meta">${o.order_code} · ${o.status} · ${fmtPrice(o.total_amount)}</div></div><div style="display:flex;gap:6px"><a class="btn btn-outline btn-sm" href="/order.html?id=${o.id}" target="_blank">View</a>${o.status==='PAYMENT_PENDING'?`<button class="btn btn-gold btn-sm" onclick="verifyOrderPayment('${o.id}')">Verify payment</button>`:''}</div></div></div>`}).join('')||'<p>No product transactions yet.</p>'}
+      <h3 style="margin-top:28px">Measurement templates</h3><button class="btn btn-outline btn-sm" onclick="createMeasurementTemplate()">+ Add template</button>${templates.map(t=>`<div class="card" style="margin:8px 0;padding:12px"><strong>${t.name}</strong> · ${(t.measurement_template_fields||[]).map(f=>f.field_name).join(', ')} <button class="btn btn-outline btn-sm" onclick="deleteMeasurementTemplate('${t.id}')">Delete</button></div>`).join('')}`;
+    window.__providers = providers;
+  }
+  window.addLogisticsProvider = async () => { try { await API.post('/logistics/providers',{company_name:document.getElementById('lpName').value.trim(),provider_code:document.getElementById('lpCode').value.trim(),contact_email:document.getElementById('lpEmail').value.trim()||null,contact_phone:document.getElementById('lpPhone').value.trim()||null,api_base_url:document.getElementById('lpApi').value.trim()||null,integration_mode:document.getElementById('lpMode').value});Toast.show('Logistics company added');load('logistics')}catch(e){Toast.show(e.message)} };
+  window.editLogisticsProvider = async id => { const p=(window.__providers||[]).find(x=>x.id===id);if(!p)return;const company_name=prompt('Company name',p.company_name);if(company_name===null)return;const contact_email=prompt('Contact email',p.contact_email||'');try{await API.put(`/logistics/providers/${id}`,{company_name,contact_email});Toast.show('Provider updated');load('logistics')}catch(e){Toast.show(e.message)} };
+  window.removeLogisticsProvider = async id => { if(!confirm('Remove this unused provider?'))return;try{await API.del(`/logistics/providers/${id}`);Toast.show('Provider removed');load('logistics')}catch(e){Toast.show(e.message)} };
+  window.verifyOrderPayment = async id => { if(!confirm('Confirm that payment was independently verified and should enter escrow?'))return;try{await API.put(`/orders/${id}/payment-verified`);Toast.show('Payment verified into escrow');load('logistics')}catch(e){Toast.show(e.message)} };
+  window.createMeasurementTemplate = async () => { const name=prompt('Template name (for example, Dress)');if(!name)return;const raw=prompt('Fields separated by commas (for example, Neck, Bust, Waist, Length)');try{await API.post('/orders/admin/templates',{name,fields:String(raw||'').split(',').map(field_name=>({field_name:field_name.trim()})).filter(f=>f.field_name)});Toast.show('Template created');load('logistics')}catch(e){Toast.show(e.message)} };
+  window.deleteMeasurementTemplate = async id => { if(!confirm('Delete this template? Existing historical specifications are not changed.'))return;try{await API.del(`/orders/admin/templates/${id}`);load('logistics')}catch(e){Toast.show(e.message)} };
 
   // Messages — broadcast to everyone/a role, or a direct chat message to one account
   async function loadMessages() {
