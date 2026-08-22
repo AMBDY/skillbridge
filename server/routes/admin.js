@@ -372,6 +372,29 @@ router.get('/listings/all', async (req, res) => {
   res.json({ products: products.data || [], services: services.data || [] });
 });
 
+// Site taxonomy and form configuration are admin-controlled, not hard-coded
+// into the public interface.
+router.get('/categories', async (req, res) => {
+  const { data, error } = await authedClient(req).from('categories').select('*').order('ecosystem').order('sort_order');
+  if (error) return res.status(400).json({ error: error.message }); res.json(data || []);
+});
+router.post('/categories', async (req, res) => {
+  const b = req.body || {}; if (!b.name || !b.ecosystem) return res.status(400).json({ error: 'Category name and ecosystem are required.' });
+  const slug = String(b.slug || b.name).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+  const { data, error } = await authedClient(req).from('categories').insert({ name: b.name, slug, ecosystem: b.ecosystem, description: b.description || null, icon: b.icon || null, sort_order: Number(b.sort_order || 0), is_active: b.is_active !== false }).select().single();
+  if (error) return res.status(400).json({ error: error.message }); res.status(201).json(data);
+});
+router.put('/categories/:id', async (req, res) => {
+  const allowed = ['name','slug','ecosystem','description','icon','sort_order','is_active']; const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => allowed.includes(key)));
+  const { data, error } = await authedClient(req).from('categories').update(patch).eq('id', req.params.id).select().single(); if (error) return res.status(400).json({ error: error.message }); res.json(data);
+});
+router.delete('/categories/:id', async (req, res) => {
+  const c = authedClient(req); const [{ count: products }, { count: services }, { count: jobs }] = await Promise.all([c.from('products').select('id',{count:'exact',head:true}).eq('category_id',req.params.id),c.from('services').select('id',{count:'exact',head:true}).eq('category_id',req.params.id),c.from('jobs').select('id',{count:'exact',head:true}).eq('category_id',req.params.id)]);
+  if ((products || 0) + (services || 0) + (jobs || 0) > 0) return res.status(400).json({ error: 'This category is in use. Disable it instead of deleting it.' }); const { error } = await c.from('categories').delete().eq('id',req.params.id); if (error) return res.status(400).json({ error: error.message }); res.json({ ok:true });
+});
+router.get('/form-controls', async (req, res) => { const { data, error } = await authedClient(req).from('form_field_controls').select('*').order('form_key').order('sort_order'); if (error) return res.status(400).json({ error:error.message }); res.json(data || []); });
+router.put('/form-controls/:formKey/:fieldKey', async (req, res) => { const b=req.body || {}; const { data,error }=await authedClient(req).from('form_field_controls').upsert({form_key:req.params.formKey,field_key:req.params.fieldKey,label:b.label||null,help_text:b.help_text||null,is_visible:b.is_visible!==false,is_required:b.is_required===true,sort_order:Number(b.sort_order||0),updated_by:req.user.id,updated_at:new Date().toISOString()},{onConflict:'form_key,field_key'}).select().single(); if(error)return res.status(400).json({error:error.message});res.json(data); });
+
 router.put('/listings/:type/:id/status', async (req, res) => {
   const { type, id } = req.params;
   if (!['products', 'services'].includes(type)) return res.status(400).json({ error: 'Invalid listing type' });
