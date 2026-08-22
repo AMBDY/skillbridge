@@ -39,11 +39,17 @@ router.get('/features', async (req, res) => {
 
 router.get('/categories', async (req, res) => {
   const { ecosystem } = req.query;
-  let q = supabase.from('categories').select('*').order('sort_order');
+  let q = supabase.from('categories').select('*').eq('is_active', true).order('sort_order');
   if (ecosystem) q = q.eq('ecosystem', ecosystem);
   const { data, error } = await q;
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
+});
+
+router.get('/form-controls/:formKey', async (req, res) => {
+  const { data, error } = await supabase.from('form_field_controls').select('field_key,label,help_text,is_visible,is_required,sort_order').eq('form_key', req.params.formKey).order('sort_order');
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
 });
 
 // Services (hire talent)
