@@ -63,21 +63,25 @@ document.getElementById('proofForm').addEventListener('submit', async (e) => {
   try {
     const proof_url = await Upload.file(file);
     btn.textContent = 'Submitting...';
-    await API.post('/payments', {
-      job_id: params.get('job') || null,
-      worker_id: params.get('worker') || null,
-      amount: +data.amount,
-      payment_method: params.get('method') || 'fiat_naira',
-      proof_url,
-      proof_meta: data,
-      purpose
-    });
+    if (params.get('payment')) {
+      await API.put(`/payments/${params.get('payment')}/proof`, { proof_url, proof_meta: data });
+    } else {
+      await API.post('/payments', {
+        job_id: params.get('job') || null,
+        worker_id: params.get('worker') || null,
+        amount: +data.amount,
+        payment_method: params.get('method') || 'fiat_naira',
+        proof_url,
+        proof_meta: data,
+        purpose
+      });
+    }
     if (purpose === 'ai_screening') {
       Toast.show('Proof submitted! AI screening activates once admin confirms payment.');
       setTimeout(() => location.href = `/applications.html?job=${params.get('job')}`, 1200);
     } else {
-      Toast.show('Proof submitted! Funds held in escrow.');
-      setTimeout(() => location.href = '/dashboard.html', 1200);
+      Toast.show(params.get('payment') ? 'Proof submitted for administrator verification.' : 'Proof submitted! Funds held in escrow.');
+      setTimeout(() => location.href = params.get('order') ? `/order.html?id=${params.get('order')}` : '/dashboard.html', 1200);
     }
   } catch (err) {
     Toast.show(err.message);
