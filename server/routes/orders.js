@@ -19,7 +19,7 @@ function nextStatus(order, value) { return { ...order, status: value, updated_at
 
 router.get('/measurement-templates', async (req, res) => {
   let q = supabase.from('measurement_templates').select('*, measurement_template_fields(*)').eq('is_active', true).order('name');
-  if (req.query.category_id) q = q.eq('category_id', req.query.category_id);
+  if (req.query.category_id) q = q.or(`category_id.eq.${req.query.category_id},category_id.is.null`);
   const { data, error } = await q; if (error) return res.status(400).json({ error: error.message }); res.json(data || []);
 });
 
