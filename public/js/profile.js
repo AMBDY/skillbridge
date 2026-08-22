@@ -28,7 +28,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           </div>
           <div class="card-meta"><span class="stars">${stars(profile.rating)}</span><span>${profile.review_count} reviews</span><span>•</span><span>${profile.role}</span></div>
         </div>
-        <a href="/chat.html?to=${profile.user_id}" class="btn btn-gold">💬 Message</a>
+        ${(Auth.user()?.user_id === profile.user_id || (!new URLSearchParams(location.search).get('id') && Auth.isLoggedIn())) ? '<a href="/edit-profile.html" class="btn btn-gold">Edit Profile</a>' : `<a href="/chat.html?to=${profile.user_id}" class="btn btn-gold">💬 Message</a>`}
       </div>
 
       <div class="grid grid-4" style="margin:24px 0">
