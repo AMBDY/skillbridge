@@ -1,107 +1,73 @@
 document.addEventListener('DOMContentLoaded', async () => {
-  if (!Auth.isLoggedIn()) { Toast.show('Please sign in to apply'); setTimeout(() => location.href = '/signin.html', 1000); return; }
-  const id = new URLSearchParams(location.search).get('id');
-  if (!id) { document.getElementById('applySub').textContent = 'No job specified.'; return; }
+  if (!Auth.isLoggedIn()) { location.href = '/signin.html'; return; }
+  const main = document.getElementById('recruitMain');
+  const user = Auth.user();
+  const isClient = ['client', 'admin'].includes(user?.role);
 
-  const job = await API.get(`/recruitment/jobs/${id}`).catch(() => null);
-  if (!job) { document.getElementById('applySub').textContent = 'Job not found or no longer accepting applications.'; return; }
+  if (isClient) {
+    main.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:12px">
+        <div>
+          <h1 class="section-title">Job Recruitment</h1>
+          <p class="section-sub">Your posted jobs, applicants, and AI screening.</p>
+        </div>
+        <a href="/post-job.html" class="btn btn-gold">+ Post Job Recruitment</a>
+      </div>
+      <div id="clientJobs" style="margin-top:24px"></div>
+      <h2 style="font-size:1.5rem;margin:32px 0 12px">All approved job recruitment listings</h2>
+      <p class="section-sub">These listings are visible to every role. Open a job to read the full description, then select Apply to complete the employer’s required form.</p>
+      <div id="openJobs"></div>`;
 
-  document.getElementById('applyTitle').textContent = `Apply: ${job.title}`;
-  document.getElementById('applySub').textContent = `${job.company_name} • ${job.location || 'Location not stated'}`;
-
-  const uploadedDocs = {}; // document_type -> url
-
-  if (job.application_fields?.length) {
-    const fieldBox = document.createElement('div');
-    fieldBox.id = 'customApplicationFields';
-    fieldBox.innerHTML = `<h3 style="margin:16px 0 8px">Information requested by this employer</h3>${job.application_fields.map(field => {
-      const required = field.required ? 'required' : '';
-      if (field.type?.startsWith('document:')) return `<div class="form-group"><label class="form-label">${field.label}${field.required ? ' *' : ''}</label><input class="form-input custom-document" type="file" data-key="${field.key}" accept="${field.type.slice(9)}" ${required}></div>`;
-      if (field.type?.startsWith('select:')) return `<div class="form-group"><label class="form-label">${field.label}${field.required ? ' *' : ''}</label><select class="form-select custom-answer" data-key="${field.key}" ${required}><option value="">Select</option>${field.type.slice(7).split('|').map(option => `<option>${option}</option>`).join('')}</select></div>`;
-      if (field.type === 'textarea') return `<div class="form-group"><label class="form-label">${field.label}${field.required ? ' *' : ''}</label><textarea class="form-textarea custom-answer" data-key="${field.key}" ${required}></textarea></div>`;
-      return `<div class="form-group"><label class="form-label">${field.label}${field.required ? ' *' : ''}</label><input class="form-input custom-answer" type="${field.type || 'text'}" data-key="${field.key}" ${required}></div>`;
-    }).join('')}`;
-    document.getElementById('docsSection').before(fieldBox);
-  }
-
-  if (job.documents?.length) {
-    document.getElementById('docsSection').innerHTML = `
-      <h3 style="margin:16px 0 8px">Required documents</h3>
-      ${job.documents.map((d, i) => `
-        <div class="form-group"><label class="form-label">${d.document_type}${d.required ? ' *' : ' (optional)'}</label>
-          <input class="form-input doc-file-input" type="file" data-type="${d.document_type}" data-required="${d.required}" accept="image/*,.pdf,.doc,.docx">
-          <div class="doc-status" data-type="${d.document_type}" style="font-size:0.85rem;color:var(--text-muted);margin-top:4px"></div>
-        </div>`).join('')}`;
-
-    document.querySelectorAll('.doc-file-input').forEach(input => {
-      input.addEventListener('change', async () => {
-        const file = input.files[0];
-        const statusEl = document.querySelector(`.doc-status[data-type="${input.dataset.type}"]`);
-        if (!file) return;
-        statusEl.textContent = 'Uploading...';
-        try {
-          uploadedDocs[input.dataset.type] = { url: await Upload.file(file), file_type: file.type };
-          statusEl.textContent = `✓ ${file.name}`;
-        } catch (e) { statusEl.textContent = 'Upload failed: ' + e.message; }
-      });
-    });
-  }
-
-  if (job.questions?.length) {
-    document.getElementById('questionsBox').innerHTML = `
-      <div class="card" style="margin-bottom:16px"><div class="card-body">
-        <h3>Screening questions</h3>
-        <p style="color:var(--text-muted);font-size:0.9rem">Answer every question below. Your answers are saved with this application.</p>
-        ${job.questions.map((q, i) => `<div class="form-group"><label class="form-label">${i + 1}. ${q.question}</label><textarea class="form-textarea screening-answer" data-question-id="${q.id}" rows="3" required></textarea></div>`).join('')}
-      </div></div>`;
-  }
-
-  let videoFile = null;
-  if (job.video_enabled !== 'disabled') {
-    document.getElementById('videoSection').style.display = 'block';
-    document.querySelector('#videoSection input[name="video_url"]')?.remove();
-    document.getElementById('videoSection').innerHTML = `
-      <div class="form-group"><label class="form-label">Video response ${job.video_enabled === 'mandatory' ? '(required for this role)' : '(optional)'}</label>
-        <input class="form-input" type="file" id="videoFileInput" accept="video/*" ${job.video_enabled === 'mandatory' ? 'required' : ''}>
-        <div id="videoStatus" style="font-size:0.85rem;color:var(--text-muted);margin-top:4px"></div>
-      </div>`;
-    document.getElementById('videoFileInput').addEventListener('change', () => {
-      videoFile = document.getElementById('videoFileInput').files[0];
-      document.getElementById('videoStatus').textContent = videoFile ? `Selected: ${videoFile.name}` : '';
-    });
-  }
-
-  document.getElementById('recruitApplyForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(e.target));
-    data.answers = {};
-    data.question_answers = {};
-    document.querySelectorAll('.custom-answer').forEach(input => { data.answers[input.dataset.key] = input.value; });
-    document.querySelectorAll('.screening-answer').forEach(input => { data.question_answers[input.dataset.questionId] = input.value; });
-    const missingRequired = (job.documents || []).some(d => d.required && !uploadedDocs[d.document_type]);
-    if (missingRequired) return Toast.show('Please upload all required documents');
-    if (job.video_enabled === 'mandatory' && !videoFile) return Toast.show('This role requires a video response');
-
-    const btn = e.target.querySelector('button[type="submit"]');
-    btn.disabled = true; btn.textContent = 'Submitting...';
-    try {
-      data.documents = Object.entries(uploadedDocs).map(([document_type, v]) => ({ document_type, file_url: v.url, file_type: v.file_type }));
-      for (const input of document.querySelectorAll('.custom-document')) {
-        const file = input.files[0];
-        if (!file) continue;
-        btn.textContent = `Uploading ${input.closest('.form-group').querySelector('label').textContent}...`;
-        data.answers[input.dataset.key] = await Upload.file(file);
-      }
-      if (videoFile) {
-        btn.textContent = 'Uploading video...';
-        data.video_url = await Upload.file(videoFile);
-      }
-      const result = await API.post(`/recruitment/apply/${id}`, data);
-      Toast.show(result.interview?.required ? 'Application submitted. Your timed video interview is now due within 30 minutes.' : 'Application submitted! AI screening begins based on the recruiter\'s plan.');
-      setTimeout(() => location.href = result.interview?.required ? `/recruitment-interview.html?application=${result.application.id}` : '/recruitment-jobs.html', 1400);
-    } catch (err) {
-      Toast.show(err.message);
-      btn.disabled = false; btn.textContent = 'Submit Application';
+    async function renderClientJobs() {
+      const mine = await API.get('/jobs/mine').catch(() => []);
+      document.getElementById('clientJobs').innerHTML = mine.length ? mine.map(j => `
+        <div class="card" style="margin-bottom:12px"><div class="card-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
+          <div>
+            <a href="/job.html?id=${j.id}" style="font-weight:600;font-size:1.05rem">${j.title}</a>
+            <div class="card-meta"><span class="badge badge-kyc">${j.status}</span><span>•</span><span>${fmtPrice(j.budget || 0)}</span>
+              ${j.status === 'pending' ? '<span>•</span><span style="color:var(--text-muted)">Awaiting superadmin approval</span>' : ''}
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+            <a href="/post-job.html?edit=${j.id}" class="btn btn-outline btn-sm">Edit</a>
+            <a href="/applications.html?job=${j.id}" class="btn btn-gold btn-sm">View Applicants</a>
+            ${['approved', 'open'].includes(j.status) ? `<button class="btn btn-outline btn-sm" onclick="jobAction('${j.id}','pause')">Pause</button>` : ''}
+            ${['paused', 'closed'].includes(j.status) ? `<button class="btn btn-outline btn-sm" onclick="jobAction('${j.id}','reopen')">Reopen</button>` : ''}
+            ${!['completed', 'cancelled', 'closed'].includes(j.status) ? `<button class="btn btn-outline btn-sm" onclick="jobAction('${j.id}','close')">Close</button>` : ''}
+            <button class="btn btn-outline btn-sm" onclick="duplicateJob('${j.id}')">Duplicate</button>
+          </div>
+        </div></div>`).join('') : '<p style="color:var(--text-muted)">You haven\'t posted any jobs yet.</p>';
     }
-  });
+    window.jobAction = async (id, action) => {
+      try { await API.put(`/jobs/${id}/${action}`); Toast.show(`Job ${action}d`); renderClientJobs(); }
+      catch (e) { Toast.show(e.message); }
+    };
+    window.duplicateJob = async (id) => {
+      try { await API.post(`/jobs/${id}/duplicate`); Toast.show('Job duplicated — awaiting approval'); renderClientJobs(); }
+      catch (e) { Toast.show(e.message); }
+    };
+    renderClientJobs();
+    const publicJobs = await API.get('/jobs').catch(() => []);
+    document.getElementById('openJobs').innerHTML = publicJobs.length ? publicJobs.map(j => `
+      <div class="card" style="margin-bottom:12px"><div class="card-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px"><div><a href="/job.html?id=${j.id}" style="font-weight:600;font-size:1.05rem">${j.title}</a><div class="card-meta"><span>${j.categories?.name || ''}</span><span>•</span><span>${fmtPrice(j.budget || 0)}</span><span>•</span><span>${j.location || j.state || 'Remote'}</span></div></div><div style="display:flex;gap:8px"><a href="/job.html?id=${j.id}" class="btn btn-outline btn-sm">View full job</a><a href="/apply-job.html?job=${j.id}" class="btn btn-gold btn-sm">Apply</a></div></div></div>`).join('') : '<p style="color:var(--text-muted)">No approved jobs right now.</p>';
+    return;
+  }
+
+  // Every other role: browse approved/open jobs and apply
+  main.innerHTML = `
+    <h1 class="section-title">Job Recruitment</h1>
+    <p class="section-sub">Jobs posted by clients and approved by SkillBridge. Apply directly below.</p>
+    <div id="openJobs" style="margin-top:24px"></div>`;
+
+  const jobs = await API.get('/jobs?status=open').catch(() => []);
+  const approved = await API.get('/jobs?status=approved').catch(() => []);
+  const all = [...jobs, ...approved];
+  document.getElementById('openJobs').innerHTML = all.length ? all.map(j => `
+    <div class="card" style="margin-bottom:12px"><div class="card-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
+      <div>
+        <a href="/job.html?id=${j.id}" style="font-weight:600;font-size:1.05rem">${j.title}</a>
+        <div class="card-meta"><span>${j.categories?.name || ''}</span><span>•</span><span>${fmtPrice(j.budget || 0)}</span><span>•</span><span>${j.location || j.state || 'Remote'}</span></div>
+      </div>
+      <a href="/apply-job.html?job=${j.id}" class="btn btn-gold btn-sm">Apply</a>
+    </div></div>`).join('') : '<p style="color:var(--text-muted)">No open jobs right now — check back soon.</p>';
 });
