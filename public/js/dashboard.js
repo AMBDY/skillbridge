@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       <a href="${['client','admin'].includes(user?.role) ? '/recruiter-jobs.html' : '/recruitment-jobs.html'}" class="stat-card"><div class="stat-num">🧑‍💼</div><div class="stat-label">Job Recruitment</div></a>
       <a href="/chat.html" class="stat-card"><div class="stat-num">💬</div><div class="stat-label">Messages</div></a>
       <a href="/payments.html" class="stat-card"><div class="stat-num">💳</div><div class="stat-label">Payments</div></a>
+      <a href="/orders.html" class="stat-card"><div class="stat-num">📦</div><div class="stat-label">Product Orders</div></a>
       <a href="/profile.html?id=${user?.user_id}" class="stat-card"><div class="stat-num">👤</div><div class="stat-label">My Profile</div></a>
       <a href="/subscribe.html" class="stat-card"><div class="stat-num">⭐</div><div class="stat-label">Boost Visibility</div></a>
       <a href="/kyc.html" class="stat-card"><div class="stat-num">🪪</div><div class="stat-label">Verify Identity</div></a>
