@@ -127,6 +127,7 @@ window.toggleRecruitmentForm = function () {
     `;
 
     document.getElementById('recruitmentPostForm').addEventListener('submit', submitRecruitmentJob);
+    FormControls.apply('recruitment_posting', document.getElementById('recruitmentPostForm'));
   } else {
     box.style.display = 'none';
   }
