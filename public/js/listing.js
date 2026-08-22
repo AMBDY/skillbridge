@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ${item.color ? `<div style="margin:8px 0"><strong>Color:</strong> ${item.color}</div>` : ''}
         ${item.gender ? `<div style="margin:8px 0"><strong>Gender:</strong> ${item.gender}</div>` : ''}
         ${item.delivery_days ? `<div style="margin:8px 0"><strong>Delivery:</strong> ${item.delivery_days} days</div>` : ''}
+        ${type === 'product' ? `<div style="margin:8px 0"><strong>Product ID:</strong> ${item.product_code || 'Generated after approval'}<br><strong>Fulfilment:</strong> ${(item.fulfillment_type || 'ready_made').replaceAll('_', ' ')}</div>` : ''}
         <p style="margin:16px 0;color:var(--text-soft)">${item.description || 'No description provided.'}</p>
 
         <div class="card" style="margin:20px 0">
@@ -50,7 +51,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <a href="/chat.html?to=${seller.user_id}&listing=${item.id}" class="btn btn-primary">💬 Chat</a>
           <button class="btn btn-outline" onclick="saveItem('${item.id}')">♡ Save</button>
           <button class="btn btn-outline" onclick="shareItem('${item.id}')">↗ Share</button>
-          ${type === 'service' ? `<a href="/post-job.html?service=${id}" class="btn btn-gold">Hire now</a>` : `<button class="btn btn-gold" onclick="Toast.show('Added to cart (demo)')">Add to cart</button>`}
+          ${type === 'service' ? `<a href="/post-job.html?service=${id}" class="btn btn-gold">Hire now</a>` : `<a href="/order-create.html?product=${item.id}" class="btn btn-gold">Order securely</a>`}
         </div>
       </div>
     </div>
@@ -72,10 +73,10 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.body.appendChild(m);
   });
 
-  const reviews = await API.get(`/marketplace/reviews/${seller.user_id}`).catch(() => []);
+  const reviews = await API.get(type === 'product' ? `/marketplace/product-reviews/${item.id}` : `/marketplace/reviews/${seller.user_id}`).catch(() => []);
   document.getElementById('reviews').innerHTML = reviews.length ? reviews.map(r => `
     <div class="card" style="margin-bottom:12px"><div class="card-body">
-      <div style="display:flex;justify-content:space-between"><strong>${r.reviewer?.display_name || 'Anonymous'}</strong><span class="stars">${stars(r.stars)}</span></div>
+      <div style="display:flex;justify-content:space-between"><strong>${r.buyer?.display_name || r.reviewer?.display_name || 'Anonymous'}</strong><span class="stars">${stars(r.rating || r.stars)}</span></div>
       <p style="color:var(--text-soft);margin-top:8px">${r.comment}</p>
       <div style="font-size:0.8rem;color:var(--text-muted);margin-top:8px">${timeAgo(r.created_at)}${r.hire_again ? ' • Would hire again' : ''}</div>
     </div></div>`).join('') : '<p style="color:var(--text-muted)">No reviews yet.</p>';
