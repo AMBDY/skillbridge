@@ -90,9 +90,12 @@ router.get('/products', async (req, res) => {
 
 router.post('/products', authMiddleware, async (req, res) => {
   const c = authedClient(req);
-  const { category_id, title, description, price, size, color, gender, images, video_url, stock, location, brand, details } = req.body;
+  const { category_id, title, description, price, size, color, gender, images, video_url, stock, location, brand, details, fulfillment_type, measurement_template_id, supported_sizes, production_days } = req.body;
+  const { data: category } = await supabase.from('categories').select('slug').eq('id', category_id).maybeSingle();
+  const prefix = String(category?.slug || 'SB').replace(/[^a-z0-9]/ig, '').slice(0, 3).toUpperCase() || 'SB';
+  const product_code = `${prefix}-${Date.now().toString().slice(-7)}`;
   const { data, error } = await c.from('products').insert({
-    user_id: req.user.id, category_id, title, description, price, size, color, gender, images, video_url, stock, location, brand, details: details || {}, status: 'pending'
+    user_id: req.user.id, category_id, title, description, price, size, color, gender, images, video_url, stock, location, brand, details: details || {}, fulfillment_type: ['ready_made','made_to_order','custom_design','made_to_order_measurements'].includes(fulfillment_type) ? fulfillment_type : 'ready_made', measurement_template_id: measurement_template_id || null, supported_sizes: Array.isArray(supported_sizes) ? supported_sizes : [], production_days: production_days ? Number(production_days) : null, product_code, status: 'pending'
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
@@ -102,7 +105,7 @@ router.put('/listings/:type/:id', authMiddleware, async (req, res) => {
   const c = authedClient(req);
   const table = req.params.type === 'service' ? 'services' : req.params.type === 'product' ? 'products' : null;
   if (!table) return res.status(400).json({ error: 'Invalid listing type.' });
-  const fields = table === 'products' ? ['category_id','title','description','price','size','color','gender','images','video_url','stock','location','brand','details'] : ['category_id','title','description','price','delivery_days','images','video_url','location'];
+  const fields = table === 'products' ? ['category_id','title','description','price','size','color','gender','images','video_url','stock','location','brand','details','fulfillment_type','measurement_template_id','supported_sizes','production_days'] : ['category_id','title','description','price','delivery_days','images','video_url','location'];
   const changes = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => fields.includes(key)));
   if (!Object.keys(changes).length) return res.status(400).json({ error: 'No editable listing fields supplied.' });
   const { data, error } = await c.from(table).update({ ...changes, status: 'pending' }).eq('id', req.params.id).eq('user_id', req.user.id).select().single();
@@ -148,6 +151,14 @@ router.post('/reviews', authMiddleware, async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
   await notify(c, { userId: reviewee_id, type: 'review_received', title: 'New review received', body: `You received a ${stars}-star review`, link: `/profile.html?id=${reviewee_id}` });
   res.json(data);
+});
+
+// Product reviews are separate from profile/service reviews and can only be
+// created through a completed product order in the orders route.
+router.get('/product-reviews/:productId', async (req, res) => {
+  const { data, error } = await supabase.from('product_reviews').select('*, buyer:buyer_id(display_name, profile_image)').eq('product_id', req.params.productId).order('created_at', { ascending: false }).limit(50);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
 });
 
 // Profile
