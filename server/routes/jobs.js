@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { supabase, createAuthedClient } = require('../utils/db');
-const { authMiddleware, hasPermission } = require('../middleware/auth');
+const { authMiddleware } = require('../middleware/auth');
 const { notify } = require('../utils/notify');
 
 function authedClient(req) {
@@ -73,8 +73,8 @@ router.get('/:id', async (req, res) => {
 
 // Create job
 router.post('/', authMiddleware, async (req, res) => {
-  if (!hasPermission(req, 'post_jobs') && !['client', 'admin'].includes(req.user.role)) {
-    return res.status(403).json({ error: 'Only clients can post jobs.' });
+  if (!['client', 'admin'].includes(req.user.role)) {
+    return res.status(403).json({ error: 'Only client and admin accounts can post jobs.' });
   }
   const c = authedClient(req);
   const { data, error } = await c.from('jobs').insert({
@@ -86,6 +86,7 @@ router.post('/', authMiddleware, async (req, res) => {
 
 // Update job
 router.put('/:id', authMiddleware, async (req, res) => {
+  if (!['client', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Only client and admin accounts can edit jobs.' });
   const c = authedClient(req);
   const allowed = ['category_id', 'title', 'description', 'budget', 'duration', 'price_min', 'price_max', 'gender', 'colors', 'size', 'state', 'location', 'reference_images', 'additional_notes'];
   const changes = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => allowed.includes(key)));
@@ -101,6 +102,7 @@ router.put('/:id', authMiddleware, async (req, res) => {
 });
 
 router.delete('/:id', authMiddleware, async (req, res) => {
+  if (!['client', 'admin'].includes(req.user.role)) return res.status(403).json({ error: 'Only client and admin accounts can delete jobs.' });
   const c = authedClient(req);
   const { data: job } = await c.from('jobs').select('*').eq('id', req.params.id).eq('user_id', req.user.id).maybeSingle();
   if (!job) return res.status(404).json({ error: 'Job not found.' });
