@@ -29,7 +29,7 @@ const CORS_ORIGIN = process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',')
 const io = new Server(server, { cors: { origin: CORS_ORIGIN } });
 
 app.use(cors({ origin: CORS_ORIGIN }));
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '10mb', verify: (req, res, buffer) => { if (req.originalUrl.startsWith('/api/payments/webhooks/')) req.rawBody = Buffer.from(buffer); } }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL;
