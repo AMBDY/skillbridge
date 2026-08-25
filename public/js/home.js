@@ -75,10 +75,15 @@ function renderFeaturedCats() {
   el.innerHTML = cats.map(c => `<a href="${c.href}" class="cat-tile"><span class="cat-icon">${c.icon}</span><span class="cat-name">${c.name}</span></a>`).join('');
 }
 
-function renderTopSellers() {
-  document.getElementById('topSellers').innerHTML = TOP_SELLERS.map(s => `
-    <div class="card">
-      <div class="card-img"><img src="${s.img}" alt="${s.name}"></div>
+async function renderTopSellers() {
+  let sellers = TOP_SELLERS;
+  try {
+    const featured = await API.get('/marketplace/top-sellers');
+    if (featured.length) sellers = featured.map(person => ({ name: person.display_name, cat: person.role, rating: person.rating || 0, img: person.profile_image || '', tier: person.subscription_tier || 'featured', user_id: person.user_id }));
+  } catch { /* retain the existing visual fallback until the admin has curated sellers */ }
+  document.getElementById('topSellers').innerHTML = sellers.map(s => `
+    <a class="card" href="${s.user_id ? `/profile.html?id=${s.user_id}` : '/hire.html'}">
+      <div class="card-img">${s.img ? `<img src="${s.img}" alt="${s.name}">` : '<div style="height:180px;display:grid;place-items:center;font-size:3rem;background:var(--surface-2)">⭐</div>'}</div>
       <div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:start">
           <div><div class="card-title">${s.name}</div><div style="color:var(--text-muted);font-size:0.82rem">${s.cat}</div></div>
@@ -86,7 +91,7 @@ function renderTopSellers() {
         </div>
         <div class="card-meta"><span class="stars">${stars(s.rating)}</span><span>${s.rating}</span></div>
       </div>
-    </div>`).join('');
+    </a>`).join('');
 }
 
 function renderRecentJobs() {
