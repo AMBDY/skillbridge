@@ -29,7 +29,8 @@
     </div>
   </div>
   <div class="warning-box">⚠ Always upload proof of payment after transfer. Funds are held in escrow until you confirm receipt.</div>
-  <a href="/pay-proof.html" id="proofLink" class="btn btn-gold btn-lg" style="margin-top:16px">Upload Proof of Payment →</a>
+  <!-- Manual proof upload disabled pending verified provider payment. -->
+  <a href="#" id="proofLink" class="btn btn-outline btn-lg" aria-disabled="true" onclick="return false" style="margin-top:16px;pointer-events:none;opacity:.55">Manual payment proof unavailable</a>
   <div class="social-row" style="justify-content:center;margin-top:24px">
     <a href="#">𝕏</a><a href="#">📷</a><a href="#">in</a><a href="#">f</a>
   </div>
@@ -40,7 +41,7 @@
 <script>
 document.getElementById('paystackBtn').addEventListener('click', () => Toast.show('Paystack integration placeholder — wire Paystack SDK in production'));
 const qs = location.search.slice(1);
-document.getElementById('proofLink').href = '/pay-proof.html?' + (qs ? qs + '&' : '') + 'method=fiat_naira';
+// Manual proof upload intentionally inactive; do not assign a payment-proof URL.
 </script>
 </body>
 </html>
