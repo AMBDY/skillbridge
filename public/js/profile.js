@@ -33,7 +33,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
       <div class="grid grid-4" style="margin:24px 0">
         <div class="stat-card"><div class="stat-num">${profile.rating || 0}★</div><div class="stat-label">Rating</div></div>
-        <div class="stat-card"><div class="stat-num">${profile.completion_rate || 100}%</div><div class="stat-label">Completion</div></div>
+        <div class="stat-card"><div class="stat-num">${profile.completion_rate ?? 0}%</div><div class="stat-label">${profile.role === 'client' ? 'Hiring rate' : 'Completion'}</div></div>
         <div class="stat-card"><div class="stat-num">${profile.response_time_hours || 24}h</div><div class="stat-label">Response time</div></div>
         <div class="stat-card"><div class="stat-num">${profile.availability ? 'Available' : 'Busy'}</div><div class="stat-label">Status</div></div>
       </div>
