@@ -38,6 +38,8 @@ document.addEventListener('DOMContentLoaded', async () => {
 
     <h2 style="font-size:1.6rem;margin:32px 0 16px">My Payments</h2>
     <div id="myPayments"></div>
+    <h2 style="font-size:1.6rem;margin:32px 0 16px">My Digital Service Projects</h2>
+    <div id="myServiceProjects"></div>
   `;
 
   API.get('/marketplace/listings/mine').then(listings => {
@@ -66,6 +68,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div><div style="font-weight:500">${p.job?.title || 'Payment'}</div><div class="card-meta"><span>${fmtPrice(p.amount)}</span><span>•</span><span>${p.status}</span><span>•</span><span>${p.payment_method}</span></div></div>
       ${p.status === 'in_escrow' && p.client_id === user?.user_id ? `<button class="btn btn-gold btn-sm" onclick="markReceived('${p.id}')">Mark Received</button>` : ''}
     </div></div>`).join('') : '<p style="color:var(--text-muted)">No payments yet.</p>';
+  API.get('/digital-services/orders').then(orders => { document.getElementById('myServiceProjects').innerHTML = orders.length ? orders.map(order => `<div class="card" style="margin-bottom:10px"><div class="card-body" style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><strong>${order.title_snapshot}</strong><div class="card-meta">${order.order_reference} · ${order.status.replaceAll('_',' ')} · ${fmtPrice(order.price)}</div></div><a class="btn btn-outline btn-sm" href="/service-order.html?id=${order.id}">Open project</a></div></div>`).join('') : '<p style="color:var(--text-muted)">No digital service projects yet.</p>'; }).catch(() => { document.getElementById('myServiceProjects').innerHTML = '<p style="color:var(--text-muted)">Projects become available after the database migration is run.</p>'; });
 });
 
 window.requestSub = async function (tier) {
