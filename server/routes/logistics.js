@@ -12,8 +12,9 @@ async function event(c, shipment, { status, location, description, source, provi
   const shipped = ['DISPATCHED','PICKED_UP','IN_TRANSIT','OUT_FOR_DELIVERY'].includes(status);
   const delivered = status === 'DELIVERED';
   await c.from('shipments').update({ status, current_location: location || shipment.current_location, dispatched_at: shipped ? shipment.dispatched_at || new Date().toISOString() : shipment.dispatched_at, delivered_at: delivered ? new Date().toISOString() : shipment.delivered_at, updated_at: new Date().toISOString() }).eq('id', shipment.id);
-  if (delivered) await c.from('product_orders').update({ status: 'BUYER_CONFIRMATION_PENDING', updated_at: new Date().toISOString() }).eq('id', shipment.order_id);
-  else if (shipped) await c.from('product_orders').update({ status: status === 'OUT_FOR_DELIVERY' ? 'OUT_FOR_DELIVERY' : 'IN_TRANSIT', updated_at: new Date().toISOString() }).eq('id', shipment.order_id);
+  if (delivered) await c.from('product_orders').update({ status: 'BUYER_CONFIRMATION_PENDING', order_state: 'BUYER_CONFIRMATION_PENDING', updated_at: new Date().toISOString() }).eq('id', shipment.order_id);
+  else if (status === 'DISPATCHED') await c.from('product_orders').update({ status: 'DISPATCHED', order_state: 'DISPATCHED', updated_at: new Date().toISOString() }).eq('id', shipment.order_id);
+  else if (shipped) await c.from('product_orders').update({ status: status === 'OUT_FOR_DELIVERY' ? 'OUT_FOR_DELIVERY' : 'IN_TRANSIT', order_state: status === 'OUT_FOR_DELIVERY' ? 'OUT_FOR_DELIVERY' : 'IN_TRANSIT', updated_at: new Date().toISOString() }).eq('id', shipment.order_id);
   await c.from('product_transaction_audit').insert({ order_id: shipment.order_id, shipment_id: shipment.id, actor_id: actorId || null, action: 'tracking_event_recorded', next_value: { status, location: location || null, source }, reason: description || null });
   const { data: order } = await c.from('product_orders').select('buyer_id,seller_id,order_code').eq('id', shipment.order_id).maybeSingle();
   if (order) for (const userId of [order.buyer_id, order.seller_id]) await notify(c, { userId, type: 'shipment_update', title: `Shipment ${status.replaceAll('_',' ')}`, body: `Order ${order.order_code}: ${location || status}.`, link: `/tracking.html?shipment=${shipment.id}` });
