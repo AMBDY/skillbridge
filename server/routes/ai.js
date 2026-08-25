@@ -15,7 +15,7 @@ router.post('/search/rank', (req, res) => {
   const ranked = (candidates || []).map(c => {
     const tierScore = tierWeight[c.subscription_tier] || 1;
     const ratingScore = (c.rating || 0) / 5;
-    const completionScore = (c.completion_rate || 100) / 100;
+    const completionScore = (c.completion_rate ?? 0) / 100;
     const reviewScore = Math.min((c.review_count || 0) / 50, 1);
     const responseScore = 1 - Math.min((c.response_time_hours || 24) / 48, 1);
     const locationScore = location && c.state && c.state.toLowerCase() === location.toLowerCase() ? 1 : 0.5;
