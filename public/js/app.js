@@ -59,60 +59,38 @@ const Auth = (function () {
     const client = await initSb();
     if (!client) throw new Error('Supabase not initialized');
 
-    // 1. Check if email is in admin_emails table (anon can read it)
-    const { data: adminRec } = await client.from('admin_emails').select('email').eq('email', payload.email.toLowerCase()).maybeSingle();
-    const isAdmin = !!adminRec;
-
-    // 2. Create auth user via Supabase auth
-    const { data: authData, error: authErr } = await client.auth.signUp({ email: payload.email, password: payload.password });
-    if (authErr) throw new Error(authErr.message);
-    const userId = authData.user?.id;
-    if (!userId) throw new Error('Failed to create auth user');
-
-    // 3. Insert profile using the authenticated session
-    const finalRole = isAdmin ? 'admin' : payload.role;
-    const { data: profile, error: profErr } = await client.from('profiles').insert({
-      user_id: userId,
-      role: finalRole,
-      first_name: payload.first_name,
-      middle_name: payload.middle_name,
-      last_name: payload.last_name,
-      display_name: payload.display_name,
+    // The database creates the matching profile from this metadata. That also
+    // works when email confirmation prevents Supabase from returning a session.
+    const { data: authData, error: authErr } = await client.auth.signUp({
       email: payload.email,
-      phone: payload.phone,
-      country: payload.country || 'Nigeria',
-      state: payload.state,
-      city: payload.city,
-      address: payload.address,
-      bank_name: payload.bank_name,
-      account_number: payload.account_number,
-      account_holder_name: payload.account_holder_name,
-      kyc_level: payload.kyc_selfie ? 1 : 0
-    }).select().single();
-    if (profErr) throw new Error(profErr.message);
-
-    // 4. Submit KYC if selfie provided
-    if (payload.kyc_selfie) {
-      await client.from('kyc_submissions').insert({
-        user_id: userId,
-        selfie_url: payload.kyc_selfie,
-        full_name: `${payload.first_name || ''} ${payload.last_name || ''}`.trim()
-      });
-    }
-
-    // 5. Get session token
+      password: payload.password,
+      options: { data: {
+        requested_role: payload.role,
+        first_name: payload.first_name, middle_name: payload.middle_name,
+        last_name: payload.last_name, display_name: payload.display_name,
+        phone: payload.phone, country: payload.country, state: payload.state,
+        city: payload.city, address: payload.address, bank_name: payload.bank_name,
+        account_number: payload.account_number, account_holder_name: payload.account_holder_name,
+        kyc_selfie: payload.kyc_selfie
+      } }
+    });
+    if (authErr) throw new Error(authErr.message);
     const { data: session } = await client.auth.getSession();
     const token = session?.session?.access_token || '';
     const refreshToken = session?.session?.refresh_token || '';
+    if (!token) return { requiresConfirmation: true };
+
+    const { data: profile, error: profErr } = await client.rpc('ensure_own_profile');
+    if (profErr || !profile) throw new Error(profErr?.message || 'Your account was created, but your profile could not be loaded.');
 
     setSession(token, refreshToken, profile);
     fetch('/api/auth/welcome-email', { method: 'POST', headers: { Authorization: `Bearer ${token}` } }).catch(() => {});
     return { user: profile, token, refreshToken };
   }
 
-  async function signin(email, password) {
+  async function signin(identifier, password) {
     const res = await fetch('/api/auth/signin', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password })
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ identifier, password })
     });
     const result = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(result.error || 'Sign in failed');
@@ -124,6 +102,16 @@ const Auth = (function () {
     }
     setSession(result.token, result.refreshToken, result.user);
     return { user: result.user, token: result.token, refreshToken: result.refreshToken };
+  }
+
+  async function requestPasswordReset(email) {
+    const client = await initSb();
+    if (!client) throw new Error('Supabase not initialized');
+    if (!String(email || '').includes('@')) throw new Error('Enter the account email address first. Password reset links cannot be sent to a phone number.');
+    const { error } = await client.auth.resetPasswordForEmail(String(email).trim(), {
+      redirectTo: `${window.location.origin}/reset-password.html`
+    });
+    if (error) throw new Error(error.message);
   }
 
   async function me() {
@@ -141,7 +129,7 @@ const Auth = (function () {
     window.location.href = '/';
   }
 
-  return { getToken, setSession, clear, user, isLoggedIn, me, signin, signup, logout };
+  return { getToken, setSession, clear, user, isLoggedIn, me, signin, signup, requestPasswordReset, logout };
 })();
 
 // Upload image to Supabase Storage
