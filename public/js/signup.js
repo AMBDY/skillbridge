@@ -1,6 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
   let role = 'client';
   let kycSelfieUrl = null;
+  document.getElementById('toggleSignupPasswords')?.addEventListener('change', (event) => {
+    ['signupPassword', 'signupConfirm'].forEach(id => {
+      const input = document.getElementById(id);
+      if (input) input.type = event.target.checked ? 'text' : 'password';
+    });
+  });
   document.querySelectorAll('.role-opt').forEach(opt => {
     opt.addEventListener('click', () => {
       document.querySelectorAll('.role-opt').forEach(o => o.classList.remove('active'));
@@ -51,9 +57,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = document.getElementById('signupBtn');
     btn.disabled = true; btn.textContent = 'Creating...';
     try {
-      await Auth.signup({ ...data, role, kyc_selfie: kycSelfieUrl });
-      Toast.show('Welcome to SkillBridge!');
-      setTimeout(() => window.location.href = '/dashboard.html', 800);
+      const result = await Auth.signup({ ...data, role, kyc_selfie: kycSelfieUrl });
+      if (result.requiresConfirmation) {
+        Toast.show('Account created. Open the verification email, then sign in with this email and password.');
+        setTimeout(() => window.location.href = '/signin.html', 1800);
+      } else {
+        Toast.show('Welcome to SkillBridge!');
+        setTimeout(() => window.location.href = '/dashboard.html', 800);
+      }
     } catch (err) {
       Toast.show(err.message);
       btn.disabled = false; btn.textContent = 'Create Account';
