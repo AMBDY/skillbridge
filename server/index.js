@@ -21,6 +21,7 @@ const supportRoutes = require('./routes/support');
 const disputeRoutes = require('./routes/disputes');
 const orderRoutes = require('./routes/orders');
 const logisticsRoutes = require('./routes/logistics');
+const digitalServiceRoutes = require('./routes/digital-services');
 const { initChatSockets } = require('./sockets/chat');
 
 const app = express();
@@ -121,6 +122,7 @@ app.use('/api/support', supportRoutes);
 app.use('/api/disputes', disputeRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/logistics', logisticsRoutes);
+app.use('/api/digital-services', digitalServiceRoutes);
 app.get('/api/health', (req, res) => res.json({ status: 'ok', service: 'skillbridge' }));
 
 // Serve HTML files with Supabase config + SEO meta tags injected
