@@ -7,7 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     <p class="section-sub">Role: ${user?.role} • Tier: ${user?.subscription_tier || 'free'} • KYC: L${user?.kyc_level || 0}</p>
 
     <div class="grid grid-4" style="margin:24px 0">
-      <a href="/post-job.html" class="stat-card"><div class="stat-num">+</div><div class="stat-label">Post a Job</div></a>
+      ${['client', 'admin'].includes(user?.role) ? '<a href="/post-job.html" class="stat-card"><div class="stat-num">+</div><div class="stat-label">Post a Job</div></a>' : ''}
       <a href="/post-listing.html" class="stat-card"><div class="stat-num">🛍️</div><div class="stat-label">Post a Listing</div></a>
       <a href="${['client','admin'].includes(user?.role) ? '/recruiter-jobs.html' : '/recruitment-jobs.html'}" class="stat-card"><div class="stat-num">🧑‍💼</div><div class="stat-label">Job Recruitment</div></a>
       <a href="/chat.html" class="stat-card"><div class="stat-num">💬</div><div class="stat-label">Messages</div></a>
@@ -58,7 +58,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('myJobs').innerHTML = myJobs.length ? myJobs.map(j => `
     <div class="card" style="margin-bottom:10px"><div class="card-body" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
       <div><a href="/job.html?id=${j.id}" style="font-weight:500">${j.title}</a><div class="card-meta"><span>${j.status}</span><span>•</span><span>${fmtPrice(j.budget || 0)}</span></div></div>
-      <div style="display:flex;gap:6px;align-items:start;flex-wrap:wrap"><span class="badge badge-kyc">${j.status}</span>${j.user_id === user?.user_id ? `<a class="btn btn-outline btn-sm" href="/post-job.html?edit=${j.id}">Edit / Replace</a><button class="btn btn-outline btn-sm" onclick="deleteJob('${j.id}')">Delete</button>` : ''}</div>
+      <div style="display:flex;gap:6px;align-items:start;flex-wrap:wrap"><span class="badge badge-kyc">${j.status}</span>${j.user_id === user?.user_id && ['client', 'admin'].includes(user?.role) ? `<a class="btn btn-outline btn-sm" href="/post-job.html?edit=${j.id}">Edit / Replace</a><button class="btn btn-outline btn-sm" onclick="deleteJob('${j.id}')">Delete</button>` : ''}</div>
     </div></div>`).join('') : '<p style="color:var(--text-muted)">No jobs yet.</p>';
 
   document.getElementById('myPayments').innerHTML = payments.length ? payments.map(p => `
