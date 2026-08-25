@@ -26,7 +26,7 @@ function scoreJobApplication(job, applicant, application) {
   const ratingScore = (applicant?.rating || 0) / 5;
   if (ratingScore >= 0.8) reasons.push('High rating');
 
-  const completionScore = (applicant?.completion_rate ?? 100) / 100;
+  const completionScore = (applicant?.completion_rate ?? 0) / 100;
   if (completionScore >= 0.9) reasons.push('Strong completion rate');
 
   const kycScore = (applicant?.kyc_level || 0) / 4;
