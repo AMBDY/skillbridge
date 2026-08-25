@@ -783,4 +783,59 @@ router.get('/export/:sheet', async (req, res) => {
   res.json({ sheet, rows, exportedAt: new Date().toISOString() });
 });
 
+// God-Eye: a compact, cross-record transaction monitor plus curated Top Sellers.
+router.get('/god-eye', async (req, res) => {
+  const c = authedClient(req); const q = String(req.query.q || '').trim(); const status = String(req.query.status || '').trim();
+  const [orders, transactions, agreements, shipments] = await Promise.all([
+    c.from('product_orders').select('id,order_code,internal_order_reference,status,total_amount,buyer_id,seller_id,created_at').or(q ? `order_code.ilike.%${q}%,internal_order_reference.ilike.%${q}%` : 'id.not.is.null').limit(50),
+    c.from('payment_transactions').select('*').or(q ? `skillbridge_reference.ilike.%${q}%,provider_reference.ilike.%${q}%` : 'id.not.is.null').limit(50),
+    c.from('agreements').select('id,agreement_number,title,status,price,client_id,worker_id').or(q ? `agreement_number.ilike.%${q}%,title.ilike.%${q}%` : 'id.not.is.null').limit(50),
+    c.from('shipments').select('id,shipment_code,tracking_number,status,order_id,current_location').or(q ? `shipment_code.ilike.%${q}%,tracking_number.ilike.%${q}%` : 'id.not.is.null').limit(50)
+  ]);
+  const filteredOrders = (orders.data || []).filter(row => !status || row.status === status || row.order_state === status);
+  const filteredTransactions = (transactions.data || []).filter(row => !status || row.status === status);
+  const filteredAgreements = (agreements.data || []).filter(row => !status || row.status === status);
+  const filteredShipments = (shipments.data || []).filter(row => !status || row.status === status);
+  res.json({ orders: filteredOrders, transactions: filteredTransactions, agreements: filteredAgreements, shipments: filteredShipments });
+});
+router.get('/god-eye/orders/:id', async (req, res) => { const c = authedClient(req); const [order, events, versions, transaction, audit] = await Promise.all([c.from('product_orders').select('*,product_order_items(*,products(id,title,product_code)),shipments(*,tracking_events(*))').eq('id', req.params.id).maybeSingle(),c.from('transaction_events').select('*').eq('order_id', req.params.id).order('created_at'),c.from('order_agreement_versions').select('*').eq('order_id', req.params.id).order('version_number',{ascending:false}),c.from('payment_transactions').select('*').eq('order_id', req.params.id).maybeSingle(),c.from('product_transaction_audit').select('*').eq('order_id', req.params.id).order('created_at')]); if (!order.data) return res.status(404).json({ error: 'Order not found.' }); res.json({ order: order.data, events: events.data || [], agreement_versions: versions.data || [], payment: transaction.data || null, audit: audit.data || [] }); });
+router.post('/listings/bulk-status', async (req, res) => { const { type, ids, status } = req.body || {}; const table = type === 'product' ? 'products' : type === 'service' ? 'services' : null; if (!table || !Array.isArray(ids) || !ids.length || ids.length > 100 || !['active','pending','rejected','suspended'].includes(status)) return res.status(400).json({ error: 'Invalid safe bulk action.' }); const c = authedClient(req); const { error } = await c.from(table).update({ status }).in('id', ids); if (error) return res.status(400).json({ error: error.message }); await c.from('audit_logs').insert({ actor_id: req.user.id, action: 'bulk_listing_status_updated', target_type: table, meta: { ids, status } }); res.json({ ok: true, updated: ids.length }); });
+
+router.get('/top-sellers', async (req, res) => {
+  const c = authedClient(req);
+  const [{ data: settings }, { data: features }, { data: orders }, { data: profiles }] = await Promise.all([
+    c.from('top_seller_settings').select('*').eq('id', true).maybeSingle(),
+    c.from('top_seller_features').select('*').order('display_position'),
+    c.from('product_orders').select('seller_id,total_amount,status,created_at'),
+    c.from('profiles').select('user_id,display_name,profile_image,role,rating,review_count,kyc_level')
+  ]);
+  const metrics = new Map();
+  (orders || []).forEach(order => { const m = metrics.get(order.seller_id) || { completed_sales: 0, sales_value: 0 }; if (order.status === 'COMPLETED') { m.completed_sales++; m.sales_value += Number(order.total_amount || 0); } metrics.set(order.seller_id, m); });
+  const people = (profiles || []).map(profile => ({ ...profile, ...(metrics.get(profile.user_id) || { completed_sales: 0, sales_value: 0 }), ai_score: Math.min(100, Math.round((metrics.get(profile.user_id)?.completed_sales || 0) * 3 + Number(profile.rating || 0) * 10 + (profile.kyc_level >= 2 ? 10 : 0))) }));
+  const featureMap = new Map((features || []).map(feature => [feature.user_id, feature]));
+  res.json({ settings, featured: (features || []).map(feature => ({ ...feature, profile: people.find(person => person.user_id === feature.user_id) || null })), recommendations: people.filter(person => person.completed_sales > 0 && !featureMap.has(person.user_id)).sort((a,b) => b.ai_score - a.ai_score).slice(0, 20), accounts: people.sort((a,b) => b.completed_sales - a.completed_sales) });
+});
+
+router.put('/top-sellers/settings', async (req, res) => {
+  const allowed = ['ai_recommendations_enabled','automatic_ranking_enabled','manual_curation_enabled','ranking_weights'];
+  const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => allowed.includes(key)));
+  patch.updated_by = req.user.id; patch.updated_at = new Date().toISOString();
+  const { data, error } = await authedClient(req).from('top_seller_settings').update(patch).eq('id', true).select().single();
+  if (error) return res.status(400).json({ error: error.message }); await authedClient(req).from('audit_logs').insert({ actor_id: req.user.id, action: 'top_seller_settings_updated', target_type: 'top_seller_settings', meta: patch }); res.json(data);
+});
+
+router.post('/top-sellers/:userId', async (req, res) => {
+  const c = authedClient(req); const { data: all } = await c.from('top_seller_features').select('display_position').order('display_position', { ascending: false }).limit(1);
+  const promotionEndsAt = req.body?.promotion_ends_at || null;
+  const { data, error } = await c.from('top_seller_features').upsert({ user_id: req.params.userId, display_position: (all?.[0]?.display_position || 0) + 1, selection_source: 'manual', promotion_ends_at: promotionEndsAt, reason: req.body?.reason || null, selected_by: req.user.id, updated_at: new Date().toISOString() }, { onConflict: 'user_id' }).select().single();
+  if (error) return res.status(400).json({ error: error.message }); await c.from('audit_logs').insert({ actor_id: req.user.id, action: 'top_seller_promoted', target_type: 'profile', target_id: req.params.userId, meta: { position: data.display_position, selection_source: data.selection_source } }); res.status(201).json(data);
+});
+router.delete('/top-sellers/:userId', async (req, res) => { const c = authedClient(req); const { error } = await c.from('top_seller_features').delete().eq('user_id', req.params.userId); if (error) return res.status(400).json({ error: error.message }); await c.from('audit_logs').insert({ actor_id: req.user.id, action: 'top_seller_removed', target_type: 'profile', target_id: req.params.userId }); res.json({ ok: true }); });
+router.put('/top-sellers/reorder', async (req, res) => { const ids = Array.isArray(req.body?.user_ids) ? req.body.user_ids : []; const c = authedClient(req); const { error } = await c.rpc('reorder_featured_top_sellers', { p_user_ids: ids }); if (error) return res.status(400).json({ error: error.message }); await c.from('audit_logs').insert({ actor_id: req.user.id, action: 'top_sellers_reordered', target_type: 'top_seller_features', meta: { user_ids: ids } }); res.json({ ok: true }); });
+
+router.get('/payment-providers', async (req, res) => { const { data, error } = await authedClient(req).from('payment_provider_configs').select('id,provider_code,display_name,is_enabled,is_default,priority,countries,supported_currencies,secret_env_key,webhook_secret_env_key,verification_mode,routing_rules,updated_at').order('priority'); if (error) return res.status(400).json({ error: error.message }); res.json(data || []); });
+router.put('/payment-providers/:id', async (req, res) => { const allowed = ['is_enabled','is_default','priority','countries','supported_currencies','routing_rules']; const patch = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => allowed.includes(key))); patch.updated_at = new Date().toISOString(); const c = authedClient(req); if (patch.is_default === true) await c.from('payment_provider_configs').update({ is_default: false }).neq('id', req.params.id); const { data, error } = await c.from('payment_provider_configs').update(patch).eq('id', req.params.id).select().single(); if (error) return res.status(400).json({ error: error.message }); res.json(data); });
+router.get('/emergency-controls', async (req, res) => { const { data, error } = await authedClient(req).from('emergency_controls').select('*').order('control_key'); if (error) return res.status(400).json({ error: error.message }); res.json(data || []); });
+router.put('/emergency-controls/:key', async (req, res) => { const active = req.body?.is_active === true; const reason = String(req.body?.reason || '').trim(); if (!reason) return res.status(400).json({ error: 'A reason is required for an emergency control change.' }); const c = authedClient(req); const { data, error } = await c.from('emergency_controls').update({ is_active: active, reason, activated_by: req.user.id, activated_at: active ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('control_key', req.params.key).select().single(); if (error) return res.status(400).json({ error: error.message }); await c.from('audit_logs').insert({ actor_id: req.user.id, action: active ? 'emergency_control_activated' : 'emergency_control_released', target_type: 'emergency_control', meta: { key: req.params.key, reason } }); res.json(data); });
+
 module.exports = router;
