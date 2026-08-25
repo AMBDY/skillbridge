@@ -13,10 +13,10 @@
     <h1 class="auth-title">Welcome back</h1>
     <p class="auth-sub">Sign in to your SkillBridge account.</p>
     <form id="signinForm">
-      <div class="form-group"><label class="form-label">Email</label><input class="form-input" type="email" name="email" required></div>
-      <div class="form-group"><label class="form-label">Password</label><input class="form-input" type="password" name="password" required></div>
+      <div class="form-group"><label class="form-label" for="signinIdentifier">Email or phone number</label><input class="form-input" id="signinIdentifier" type="text" name="email" autocomplete="username" required><small style="color:var(--text-muted)">Use the email address or phone number registered to your account.</small></div>
+      <div class="form-group"><label class="form-label" for="signinPassword">Password</label><div style="display:flex;gap:8px"><input class="form-input" id="signinPassword" type="password" name="password" autocomplete="current-password" required><button class="btn btn-outline btn-sm" type="button" id="toggleSigninPassword" aria-controls="signinPassword" aria-pressed="false">Show</button></div></div>
       <button type="submit" class="btn btn-gold btn-block btn-lg" id="signinBtn">Sign In</button>
-      <p style="text-align:center;margin-top:16px"><a href="#" style="color:var(--gold);font-size:0.9rem">Forgot password?</a></p>
+      <p style="text-align:center;margin-top:16px"><a href="/forgot-password.html" id="forgotPassword" style="color:var(--gold);font-size:0.9rem">Forgot password?</a></p>
       <p style="text-align:center;margin-top:12px;color:var(--text-soft)">New here? <a href="/signup.html" style="color:var(--gold)">Create account</a></p>
     </form>
   </div>
