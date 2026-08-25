@@ -12,7 +12,7 @@
   <div class="auth-card" style="max-width:640px">
     <h1 class="auth-title">Post a Listing</h1>
     <p class="auth-sub">Create a product listing for items you want to sell.</p>
-    <input type="hidden" id="listingType" value="product">
+    <div class="form-group"><label class="form-label">Listing type</label><select class="form-select" id="listingType"><option value="product">Physical product</option><option value="service">Digital service (Freelancers only)</option></select></div>
 
     <form id="listingForm">
       <div class="form-group"><label class="form-label">Category</label><select class="form-select" id="catSel" required></select></div>
@@ -23,6 +23,7 @@
         <div class="form-group svc-only"><label class="form-label">Delivery time (days)</label><input class="form-input" type="number" name="delivery_days" value="3"></div>
         <div class="form-group prod-only" style="display:none"><label class="form-label">Stock</label><input class="form-input" type="number" name="stock" value="1"></div>
       </div>
+      <details class="card svc-only" style="padding:14px;margin:16px 0" open><summary style="cursor:pointer;font-weight:600">Digital service delivery details</summary><div class="grid grid-2" style="margin-top:14px"><div class="form-group"><label class="form-label">Included revisions</label><input class="form-input" type="number" min="0" name="revisions_included" value="2"></div><div class="form-group"><label class="form-label">Deliverables (comma-separated)</label><input class="form-input" name="deliverables" placeholder="PNG, SVG, source files"></div></div><div class="form-group"><label class="form-label">Requirements clients should provide (one field per line)</label><textarea class="form-textarea" name="requirements_schema" placeholder="Business name&#10;Preferred colours&#10;Target audience"></textarea></div><div class="form-group"><label class="form-label">Additional service terms</label><textarea class="form-textarea" name="terms_included" placeholder="State what is included and excluded."></textarea></div></details>
       <div class="form-row">
         <div class="form-group"><label class="form-label">Location</label><input class="form-input" name="location" placeholder="e.g. Lagos, Nigeria"></div>
         <div class="form-group prod-only" style="display:none"><label class="form-label">Brand</label><input class="form-input" name="brand"></div>
@@ -52,13 +53,7 @@
       <details class="card prod-only" style="padding:14px;margin:16px 0" open><summary style="cursor:pointer;font-weight:600">Product details, inventory & delivery</summary>
         <div class="grid grid-2" style="margin-top:14px">
           <div class="form-group"><label class="form-label">Condition</label><select class="form-select" name="detail_condition"><option value="new">New</option><option value="used_like_new">Used — like new</option><option value="used_good">Used — good</option><option value="refurbished">Refurbished</option></select></div>
-          <div class="form-group">
-            <label class="form-label">SKU</label>
-            <input class="form-input" name="detail_sku" placeholder="e.g. DRESS-RED-M">
-            <small style="color:var(--text-muted)">
-            Optional internal product code for identifying stock, sizes, colours, or variations.
-            </small>
-          </div>
+          <div class="form-group"><label class="form-label">SKU</label><input class="form-input" name="detail_sku"></div>
           <div class="form-group"><label class="form-label">Warranty</label><input class="form-input" name="detail_warranty" placeholder="e.g. 12 months"></div>
           <div class="form-group"><label class="form-label">Weight / dimensions</label><input class="form-input" name="detail_dimensions" placeholder="e.g. 2kg; 30 × 20 × 10cm"></div>
           <div class="form-group"><label class="form-label">Shipping method</label><select class="form-select" name="detail_shipping"><option>Courier delivery</option><option>Pickup</option><option>Courier or pickup</option><option>Digital delivery</option></select></div>
