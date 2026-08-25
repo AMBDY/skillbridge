@@ -7,14 +7,6 @@ document.addEventListener('DOMContentLoaded', () => {
     togglePassword.textContent = isHidden ? 'Hide' : 'Show';
     togglePassword.setAttribute('aria-pressed', String(isHidden));
   });
-  document.getElementById('forgotPassword')?.addEventListener('click', async (event) => {
-    event.preventDefault();
-    const identifier = document.querySelector('[name="identifier"]')?.value.trim();
-    try {
-      await Auth.requestPasswordReset(identifier);
-      Toast.show('If this email has an account, a password-reset link has been sent.');
-    } catch (error) { Toast.show(error.message); }
-  });
   document.getElementById('signinForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const form = e.target;
@@ -22,7 +14,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = document.getElementById('signinBtn');
     btn.disabled = true; btn.textContent = 'Signing in...';
     try {
-      await Auth.signin(data.identifier, data.password);
+      // Accept both field names so cached pages from the previous release do
+      // not send blank credentials during a staged deployment.
+      await Auth.signin(data.identifier || data.email, data.password);
       Toast.show('Signed in!');
       setTimeout(() => window.location.href = '/dashboard.html', 600);
     } catch (err) {
