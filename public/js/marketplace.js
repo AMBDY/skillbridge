@@ -21,9 +21,19 @@ const Marketplace = (function () {
 
     const listingsEl = document.getElementById('listings');
     Skeleton.grid(8, listingsEl);
+    if (ecosystem === 'hire') await loadTalent();
     await loadListings(ecosystem);
 
     document.getElementById('sortSel').addEventListener('change', () => loadListings(ecosystem));
+  }
+
+  async function loadTalent() {
+    const root = document.getElementById('talentCards'); if (!root) return;
+    const people = await API.get('/marketplace/talent').catch(() => []);
+    root.innerHTML = people.length ? people.map(person => {
+      const p = person.profile_sections || {}, tags = (p.skills || p.specialties || []).slice(0, 3).join(' • ');
+      return `<div class="card"><div class="card-body"><img src="${person.profile_image || 'https://images.pexels.com/photos/3777943/pexels-photo-3777943.jpeg'}" style="width:60px;height:60px;border-radius:50%;object-fit:cover"><div class="card-title" style="margin-top:8px">${person.display_name || 'Freelancer'}</div><div class="card-meta">${p.headline || 'Digital professional'}</div><div class="card-meta"><span class="stars">${stars(person.rating)}</span> ${person.review_count || 0} reviews · ${person.completion_rate || 0}% completion</div><div class="card-meta">${tags || 'Professional profile in progress'}</div><div class="card-actions" style="margin-top:12px"><a class="btn btn-outline btn-sm" href="/profile.html?id=${person.user_id}">View profile</a><a class="btn btn-gold btn-sm" href="/chat.html?to=${person.user_id}">Discuss project</a></div></div></div>`;
+    }).join('') : '<p style="grid-column:1/-1;color:var(--text-muted)">No available freelancer profiles yet.</p>';
   }
 
   async function loadListings(ecosystem) {
