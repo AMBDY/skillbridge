@@ -68,11 +68,24 @@ router.get('/services', async (req, res) => {
   res.json(enriched);
 });
 
+// Hire Talent is people-first. A completed Freelancer profile can be found
+// even before the person creates a separate service listing.
+router.get('/talent', async (req, res) => {
+  const search = String(req.query.search || '').trim();
+  let query = supabase.from('profiles').select('user_id,display_name,profile_image,role,rating,review_count,completion_rate,availability,country,state,city,profile_sections,kyc_level').eq('role', 'freelancer').eq('availability', true).order('rating', { ascending: false }).limit(60);
+  if (search) query = query.ilike('display_name', `%${search}%`);
+  const { data, error } = await query;
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
 router.post('/services', authMiddleware, async (req, res) => {
   const c = authedClient(req);
-  const { category_id, title, description, price, delivery_days, images, video_url, location } = req.body;
+  const { data: profile } = await c.from('profiles').select('role').eq('user_id', req.user.id).maybeSingle();
+  if (profile?.role !== 'freelancer') return res.status(403).json({ error: 'Only Freelancer accounts can publish digital services.' });
+  const { category_id, title, description, price, delivery_days, images, video_url, location, revisions_included, deliverables, requirements_schema, terms_included } = req.body;
   const { data, error } = await c.from('services').insert({
-    user_id: req.user.id, category_id, title, description, price, delivery_days, images, video_url, location, status: 'pending'
+    user_id: req.user.id, category_id, title, description, price, delivery_days, images, video_url, location, revisions_included: Number.isInteger(Number(revisions_included)) ? Number(revisions_included) : 2, deliverables: Array.isArray(deliverables) ? deliverables : [], requirements_schema: Array.isArray(requirements_schema) ? requirements_schema : [], terms_included: terms_included || null, status: 'pending'
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
@@ -111,7 +124,7 @@ router.put('/listings/:type/:id', authMiddleware, async (req, res) => {
   const c = authedClient(req);
   const table = req.params.type === 'service' ? 'services' : req.params.type === 'product' ? 'products' : null;
   if (!table) return res.status(400).json({ error: 'Invalid listing type.' });
-  const fields = table === 'products' ? ['category_id','title','description','price','size','color','gender','images','video_url','stock','location','brand','details','fulfillment_type','measurement_template_id','supported_sizes','production_days'] : ['category_id','title','description','price','delivery_days','images','video_url','location'];
+  const fields = table === 'products' ? ['category_id','title','description','price','size','color','gender','images','video_url','stock','location','brand','details','fulfillment_type','measurement_template_id','supported_sizes','production_days'] : ['category_id','title','description','price','delivery_days','images','video_url','location','revisions_included','deliverables','requirements_schema','terms_included'];
   const changes = Object.fromEntries(Object.entries(req.body || {}).filter(([key]) => fields.includes(key)));
   if (!Object.keys(changes).length) return res.status(400).json({ error: 'No editable listing fields supplied.' });
   const { data, error } = await c.from(table).update({ ...changes, status: 'pending' }).eq('id', req.params.id).eq('user_id', req.user.id).select().single();
@@ -173,6 +186,15 @@ router.get('/profile/:userId', async (req, res) => {
   if (error) return res.status(400).json({ error: error.message });
   if (!data) return res.status(404).json({ error: 'Profile not found' });
   res.json(data);
+});
+
+// Public checkout pages read only enabled, intentionally public payment data.
+// Provider secrets are configured in the deployment environment, never here.
+router.get('/payment-methods', async (req, res) => {
+  const purpose = String(req.query.purpose || 'product');
+  const { data, error } = await supabase.from('payment_methods').select('method_code,display_name,method_type,provider_code,currency,network,public_details,priority').eq('is_enabled', true).contains('supported_purposes', [purpose]).order('priority');
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
 });
 
 router.put('/profile', authMiddleware, async (req, res) => {
