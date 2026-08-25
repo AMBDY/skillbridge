@@ -12,6 +12,7 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const tierBadge = { elite: 'badge-elite', featured: 'badge-gold', pro: 'badge-gold', free: 'badge-kyc' }[profile.subscription_tier || 'free'];
   const kycLabels = ['Unverified', 'Phone verified', 'ID verified', 'KYC verified', 'Elite verified'];
+  const professional = profile.profile_sections || {};
 
   main.innerHTML = `
     <div style="background:var(--navy);height:200px;position:relative">
@@ -42,6 +43,11 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div>
           <h2 style="font-size:1.5rem;margin-bottom:12px">About</h2>
           <p style="color:var(--text-soft)">${profile.about || 'No about section yet.'}</p>
+          ${professional.headline ? `<h3 style="margin-top:20px;font-size:1.2rem">${professional.headline}</h3>` : ''}
+          ${professional.main_specialty || professional.specialties?.length ? `<p style="color:var(--text-soft)"><strong>Specialties:</strong> ${professional.main_specialty || professional.specialties.join(', ')}</p>` : ''}
+          ${professional.skills?.length ? `<p style="color:var(--text-soft)"><strong>Skills:</strong> ${professional.skills.join(', ')}</p>` : ''}
+          ${professional.years_experience ? `<p style="color:var(--text-soft)"><strong>Experience:</strong> ${professional.years_experience} years</p>` : ''}
+          ${professional.portfolio_links?.length ? `<h3 style="margin-top:20px;font-size:1.2rem">Portfolio</h3>${professional.portfolio_links.map(link => `<p><a href="${link}" target="_blank" rel="noopener">View portfolio item</a></p>`).join('')}` : ''}
           ${profile.cover_letter ? `<h3 style="margin-top:20px;font-size:1.2rem">Cover letter</h3><p style="color:var(--text-soft)">${profile.cover_letter}</p>` : ''}
           <div style="margin-top:20px;font-size:0.9rem;color:var(--text-muted)">
             ${profile.city ? `<div>📍 ${profile.city}, ${profile.state}, ${profile.country}</div>` : ''}
