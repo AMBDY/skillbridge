@@ -31,6 +31,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         ${item.color ? `<div style="margin:8px 0"><strong>Color:</strong> ${item.color}</div>` : ''}
         ${item.gender ? `<div style="margin:8px 0"><strong>Gender:</strong> ${item.gender}</div>` : ''}
         ${item.delivery_days ? `<div style="margin:8px 0"><strong>Delivery:</strong> ${item.delivery_days} days</div>` : ''}
+        ${type === 'service' ? `<div style="margin:8px 0"><strong>Included revisions:</strong> ${item.revisions_included ?? 2}<br><strong>Deliverables:</strong> ${(item.deliverables || []).join(', ') || 'As agreed'}</div>` : ''}
         ${type === 'product' ? `<div style="margin:8px 0"><strong>Product ID:</strong> ${item.product_code || 'Generated after approval'}<br><strong>Fulfilment:</strong> ${(item.fulfillment_type || 'ready_made').replaceAll('_', ' ')}</div>` : ''}
         <p style="margin:16px 0;color:var(--text-soft)">${item.description || 'No description provided.'}</p>
 
@@ -51,7 +52,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <a href="/chat.html?to=${seller.user_id}&listing=${item.id}" class="btn btn-primary">💬 Chat</a>
           <button class="btn btn-outline" onclick="saveItem('${item.id}')">♡ Save</button>
           <button class="btn btn-outline" onclick="shareItem('${item.id}')">↗ Share</button>
-          ${type === 'service' ? `<a href="/post-job.html?service=${id}" class="btn btn-gold">Hire now</a>` : `<a href="/order-create.html?product=${item.id}" class="btn btn-gold">Order securely</a>`}
+          ${type === 'service' ? `<a href="/service-order-create.html?service=${id}" class="btn btn-gold">Order service</a>` : `<a href="/order-create.html?product=${item.id}" class="btn btn-gold">Order securely</a>`}
         </div>
       </div>
     </div>
