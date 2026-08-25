@@ -24,9 +24,17 @@ setInterval(() => {
 // entirely. Now the frontend calls this endpoint instead, which enforces
 // lockout, then signs in via the same Supabase Auth API on the server.
 router.post('/signin', async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
-  const key = email.toLowerCase();
+  const { identifier, email, password } = req.body;
+  if (!(identifier || email) || !password) return res.status(400).json({ error: 'Email or phone number and password are required.' });
+  const supplied = String(identifier || email).trim();
+  let loginEmail = supplied.toLowerCase();
+  if (!supplied.includes('@')) {
+    const phoneLogin = supplied.replace(/\D/g, '');
+    const { data: profileForPhone } = await supabase.from('profiles').select('email').eq('phone_login', phoneLogin).maybeSingle();
+    if (!profileForPhone?.email) return res.status(401).json({ error: 'Invalid login credentials.' });
+    loginEmail = profileForPhone.email.toLowerCase();
+  }
+  const key = loginEmail;
   const entry = attempts.get(key) || { count: 0, lockedUntil: 0 };
 
   if (entry.lockedUntil > Date.now()) {
@@ -34,25 +42,33 @@ router.post('/signin', async (req, res) => {
     return res.status(429).json({ error: `Too many failed attempts. Try again in ${minutes} minute(s).` });
   }
 
-  const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({ email, password });
+  const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({ email: loginEmail, password });
   if (authErr) {
     entry.count += 1;
     if (entry.count >= MAX_ATTEMPTS) {
       entry.lockedUntil = Date.now() + LOCKOUT_MS;
       entry.count = 0;
-      const { data: existingProfile } = await supabase.from('profiles').select('user_id').eq('email', email).maybeSingle();
+      const { data: existingProfile } = await supabase.from('profiles').select('user_id').eq('email', loginEmail).maybeSingle();
       await supabase.rpc('create_fraud_flag', {
         p_user_id: existingProfile?.user_id || null, p_flag_type: 'repeated_login_failures',
-        p_details: { email }, p_risk_score: 50
+        p_details: { email: loginEmail }, p_risk_score: 50
       }).catch(() => {});
     }
     attempts.set(key, entry);
-    return res.status(401).json({ error: authErr.message });
+    const message = /email not confirmed/i.test(authErr.message)
+      ? 'Your email is not confirmed. Open the verification email, then sign in again.'
+      : 'Invalid email/phone number or password. Check your details, or use the password reset link if needed.';
+    return res.status(401).json({ error: message });
   }
 
   attempts.delete(key);
   const userId = authData.user?.id;
-  const { data: profile } = await supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle();
+  let { data: profile } = await supabase.from('profiles').select('*').eq('user_id', userId).maybeSingle();
+  if (!profile && authData.session?.access_token) {
+    const signedInClient = createAuthedClient(authData.session.access_token);
+    const { data: repairedProfile } = await signedInClient.rpc('ensure_own_profile');
+    profile = repairedProfile || null;
+  }
   if (!profile) return res.status(400).json({ error: 'Profile not found. Contact support.' });
 
   res.json({
