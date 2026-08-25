@@ -3,6 +3,9 @@ const JobsPage = (function () {
   const CAT_ICONS = { 'remote-jobs': '🌐', 'office-jobs': '🏢', 'contract-jobs': '📄', 'hybrid-jobs': '🔀', 'internship': '🎓' };
 
   async function init() {
+    const canPostJobs = ['client', 'admin'].includes(Auth.user()?.role);
+    const postButton = document.getElementById('postJobButton');
+    if (postButton) postButton.hidden = !canPostJobs;
     renderAdSlot('#adSlotJobs', 'jobs');
     const cats = await API.get('/marketplace/categories?ecosystem=jobs').catch(() => []);
     document.getElementById('catGrid').innerHTML = cats.map(c => `
@@ -15,7 +18,7 @@ const JobsPage = (function () {
     list.innerHTML = '<div class="skeleton" style="height:120px;margin-bottom:12px"></div><div class="skeleton" style="height:120px"></div>';
     const jobs = await API.get('/jobs').catch(() => []);
     if (!jobs.length) {
-      list.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted)">No jobs posted yet. <a href="/post-job.html" style="color:var(--gold)">Post the first job</a></div>`;
+      list.innerHTML = `<div style="text-align:center;padding:48px;color:var(--text-muted)">No jobs posted yet.${canPostJobs ? ' <a href="/post-job.html" style="color:var(--gold)">Post the first job</a>' : ''}</div>`;
       return;
     }
     list.innerHTML = jobs.map(j => `
