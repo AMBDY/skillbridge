@@ -1,5 +1,10 @@
 document.addEventListener('DOMContentLoaded', async () => {
   if (!Auth.isLoggedIn()) { Toast.show('Please sign in'); setTimeout(() => location.href = '/signin.html', 1000); return; }
+  if (!['client', 'admin'].includes(Auth.user()?.role)) {
+    Toast.show('Only client and admin accounts can post jobs. You can post a listing instead.');
+    setTimeout(() => location.href = '/post-listing.html', 1200);
+    return;
+  }
   const cats = await API.get('/marketplace/categories').catch(() => []);
   document.getElementById('catSel').innerHTML = '<option value="">Select category</option>' + cats.map(c => `<option value="${c.id}">${c.name} (${c.ecosystem})</option>`).join('');
 
