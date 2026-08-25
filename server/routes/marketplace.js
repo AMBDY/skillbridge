@@ -390,4 +390,16 @@ router.put('/notifications/read-all', authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
+// The homepage reads only the deliberately featured accounts. It never exposes
+// payment, address, or private order details.
+router.get('/top-sellers', async (req, res) => {
+  const { data: featured, error } = await supabase.from('top_seller_features').select('user_id,display_position,promotion_ends_at').order('display_position');
+  if (error) return res.status(400).json({ error: error.message });
+  const ids = (featured || []).map(row => row.user_id);
+  if (!ids.length) return res.json([]);
+  const { data: profiles } = await supabase.from('profiles').select('user_id,display_name,profile_image,role,rating,review_count,subscription_tier').in('user_id', ids);
+  const profileMap = new Map((profiles || []).map(profile => [profile.user_id, profile]));
+  res.json((featured || []).map(row => ({ ...profileMap.get(row.user_id), position: row.display_position })).filter(row => row.user_id));
+});
+
 module.exports = router;
