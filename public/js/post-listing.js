@@ -7,6 +7,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   const params = new URLSearchParams(location.search);
   const editId = params.get('edit');
   const editType = params.get('type') || 'product';
+  typeSel.value = editType;
 
   async function loadCategories() {
     const ecosystem = typeSel.value === 'service' ? 'hire' : 'shop';
@@ -71,10 +72,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   if (editId) {
     const listing = await API.get('/marketplace/listings/mine').then(rows => rows.find(row => row.id === editId && row.type === editType)).catch(() => null);
     if (!listing) { Toast.show('Listing not found'); return; }
-    document.querySelector('.auth-title').textContent = 'Edit Product Listing';
+    typeSel.value = editType; await loadCategories(); toggleFields();
+    document.querySelector('.auth-title').textContent = `Edit ${editType === 'service' ? 'Digital Service' : 'Product'} Listing`;
     document.querySelector('.auth-sub').textContent = 'Replace any information or media. The updated listing will wait for admin approval.';
     document.querySelector('#listingForm button[type="submit"]').textContent = 'Submit Update for Approval';
-    ['title','description','price','stock','location','brand','size','color','gender','fulfillment_type','production_days'].forEach(key => { if (document.getElementById('listingForm').elements[key] && listing[key] != null) document.getElementById('listingForm').elements[key].value = listing[key]; });
+    ['title','description','price','stock','location','brand','size','color','gender','fulfillment_type','production_days','delivery_days','revisions_included','terms_included'].forEach(key => { if (document.getElementById('listingForm').elements[key] && listing[key] != null) document.getElementById('listingForm').elements[key].value = listing[key]; });
+    if (editType === 'service') { document.getElementById('listingForm').elements.deliverables.value = (listing.deliverables || []).join(', '); document.getElementById('listingForm').elements.requirements_schema.value = (listing.requirements_schema || []).map(x => x.label || x.name || '').filter(Boolean).join('\n'); }
     catSel.value = listing.category_id || catSel.value;
     uploadedImages = [...(listing.images || [])]; renderImages();
     if (listing.supported_sizes?.length) document.getElementById('listingForm').elements.supported_sizes.value = listing.supported_sizes.join(', ');
@@ -94,6 +97,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     data.details = Object.fromEntries(Array.from(e.target.querySelectorAll('[name^="detail_"]')).map(input => [input.name.slice(7), input.type === 'checkbox' ? input.checked : input.value]));
     data.details.variations = String(data.details.variations || '').split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [name, option, price_adjustment, stock] = line.split('|').map(v => v.trim()); return { name, option, price_adjustment: Number(price_adjustment || 0), stock: Number(stock || 0) }; });
     data.supported_sizes = String(data.supported_sizes || '').split(',').map(size => size.trim()).filter(Boolean);
+    data.revisions_included = Number(data.revisions_included || 0);
+    data.deliverables = String(data.deliverables || '').split(',').map(x => x.trim()).filter(Boolean);
+    data.requirements_schema = String(data.requirements_schema || '').split('\n').map((label, index) => ({ key: `requirement_${index + 1}`, label: label.trim(), required: false })).filter(x => x.label);
     if (data.delivery_days) data.delivery_days = +data.delivery_days;
     if (data.stock) data.stock = +data.stock;
 
@@ -103,7 +109,7 @@ document.addEventListener('DOMContentLoaded', async () => {
       const videoFile = document.getElementById('videoInput').files[0];
       if (videoFile) { btn.textContent = 'Uploading video...'; data.video_url = await Upload.file(videoFile); }
       if (editId) await API.put(`/marketplace/listings/${editType}/${editId}`, data);
-      else await API.post('/marketplace/products', data);
+      else await API.post(typeSel.value === 'service' ? '/marketplace/services' : '/marketplace/products', data);
       Toast.show(editId ? 'Update submitted for admin approval.' : 'Submitted! A superadmin will review it before it goes live.');
       setTimeout(() => location.href = '/dashboard.html', 1200);
     } catch (err) {
