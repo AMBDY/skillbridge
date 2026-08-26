@@ -94,6 +94,17 @@ router.put('/kyc/:id', async (req, res) => {
   res.json(kyc);
 });
 
+// AI-assisted duplicate monitoring: deterministic identity/document signals
+// create review flags; they never auto-reject an account.
+router.post('/kyc/duplicate-scan', async (req, res) => {
+  const c = authedClient(req); const { data: rows, error } = await c.from('kyc_submissions').select('*').order('created_at'); if (error) return res.status(400).json({ error: error.message });
+  const clean = value => String(value || '').toLowerCase().replace(/[^a-z0-9]/g, ''); let flagged = 0;
+  for (const row of rows || []) { const name = clean(row.full_name); const selfie = String(row.selfie_url || '').trim(); const matches = (rows || []).filter(other => other.id !== row.id && ((name && name === clean(other.full_name)) || (selfie && selfie === String(other.selfie_url || '').trim()))); const details = matches.map(other => ({ submission_id: other.id, match_type: selfie && selfie === String(other.selfie_url || '').trim() ? 'same_document_or_selfie_file' : 'same_normalized_name', confidence: selfie && selfie === String(other.selfie_url || '').trim() ? 95 : 70 })); await c.from('kyc_submissions').update({ normalized_full_name: name || null, duplicate_risk: details.length ? 'review_required' : 'clear', duplicate_matches: details }).eq('id', row.id); if (details.length) { flagged++; for (const d of details) await c.from('kyc_duplicate_checks').upsert({ kyc_submission_id: row.id, matched_submission_id: d.submission_id, match_type: d.match_type, confidence: d.confidence, details: d }, { onConflict: 'kyc_submission_id,matched_submission_id,match_type' }).catch(() => {}); } }
+  res.json({ scanned: (rows || []).length, flagged });
+});
+router.get('/kyc/duplicate-checks', async (req, res) => { const { data, error } = await authedClient(req).from('kyc_duplicate_checks').select('*').eq('status', 'open').order('created_at', { ascending: false }); if (error) return res.status(400).json({ error: error.message }); res.json(data || []); });
+router.put('/kyc/duplicate-checks/:id', async (req, res) => { const status = ['resolved','dismissed'].includes(req.body?.status) ? req.body.status : null; if (!status) return res.status(400).json({ error: 'Use resolved or dismissed.' }); const { data, error } = await authedClient(req).from('kyc_duplicate_checks').update({ status, reviewed_by: req.user.id, reviewed_at: new Date().toISOString() }).eq('id', req.params.id).select().single(); if (error) return res.status(400).json({ error: error.message }); res.json(data); });
+
 // Job moderation
 router.get('/jobs', async (req, res) => {
   const c = authedClient(req);
@@ -417,21 +428,24 @@ router.put('/listings/:type/:id/status', async (req, res) => {
 // Broadcast messaging — real notification to every account, or a role subset
 router.post('/broadcast', async (req, res) => {
   const c = authedClient(req);
-  const { title, body, target_role } = req.body;
+  const { title, body, target_role, target_user_ids, target_category_id, media_url, reason_code, delivery_mode, custom_reason } = req.body;
   if (!title || !body) return res.status(400).json({ error: 'Title and message are required.' });
 
   let q = c.from('profiles').select('user_id');
-  if (target_role && target_role !== 'all') q = q.eq('role', target_role);
+  if (Array.isArray(target_user_ids) && target_user_ids.length) q = q.in('user_id', target_user_ids);
+  else if (target_role && target_role !== 'all') q = q.eq('role', target_role);
   const { data: targets, error } = await q;
   if (error) return res.status(400).json({ error: error.message });
 
   let sent = 0;
   for (const t of targets || []) {
-    await notify(c, { userId: t.user_id, type: 'announcement', title, body, link: '/dashboard.html' });
+    await notify(c, { userId: t.user_id, type: reason_code || 'announcement', title, body: media_url ? `${body}\nAttachment: ${media_url}` : body, link: '/dashboard.html' });
     sent++;
   }
-  res.json({ sent });
+  const { data: campaign } = await c.from('admin_message_campaigns').insert({ title, body, reason_code: reason_code || 'announcement', custom_reason: custom_reason || null, delivery_mode: delivery_mode === 'automatic' ? 'automatic' : 'manual', target_role: target_role === 'all' ? null : target_role || null, target_category_id: target_category_id || null, target_user_ids: Array.isArray(target_user_ids) ? target_user_ids : [], media_url: media_url || null, created_by: req.user.id, sent_at: new Date().toISOString() }).select().single();
+  res.json({ sent, campaign });
 });
+router.get('/message-campaigns', async (req, res) => { const { data, error } = await authedClient(req).from('admin_message_campaigns').select('*').order('created_at', { ascending: false }).limit(50); if (error) return res.status(400).json({ error: error.message }); res.json(data || []); });
 
 // Site Content (CMS-style key/value blocks)
 router.get('/site-content', async (req, res) => {
