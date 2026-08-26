@@ -129,6 +129,23 @@ router.put('/:id/payment-verified', async (req, res) => {
   // followed by server-side verification may do that.
   return res.status(409).json({ error: 'Manual payment verification is disabled. Use Reconcile Payment after the provider integration has independently verified the transaction.' });
 });
+// Exceptional admin recovery only. This is audited and cannot impersonate a
+// provider webhook; a reason is mandatory and the order remains traceable.
+router.put('/:id/admin-payment-override', async (req, res) => {
+  try {
+    if (!admin(req)) return res.status(403).json({ error: 'Finance or superadmin permission is required.' });
+    const reason = String(req.body?.reason || '').trim(); if (!reason) return res.status(400).json({ error: 'A reason is required for a manual payment override.' });
+    const c = client(req), order = await getOrder(c, req.params.id); if (!order) return res.status(404).json({ error: 'Order not found.' });
+    if (!['AWAITING_PAYMENT','PAYMENT_PROCESSING','PAYMENT_FAILED','PAYMENT_EXPIRED'].includes(canonicalState(order))) return res.status(409).json({ error: 'This order is not eligible for a payment override.' });
+    const result = await transition(c, order, 'PAYMENT_VERIFIED', req.user.id, 'admin', 'ADMIN_PAYMENT_OVERRIDE', { reason });
+    await transition(c, result, 'READY_FOR_DISPATCH', req.user.id, 'admin', 'ADMIN_DISPATCH_AUTHORIZATION', { reason });
+    await c.from('payments').update({ status: 'in_escrow' }).eq('id', order.payment_id);
+    await c.from('payment_transactions').update({ status: 'ADMIN_OVERRIDE_VERIFIED', verification_status: 'ADMIN_OVERRIDE', verified_at: new Date().toISOString(), metadata: { admin_override_reason: reason, admin_override_by: req.user.id } }).eq('order_id', order.id);
+    await notify(c, { userId: order.seller_id, type: 'admin_payment_override', title: 'Order authorized by administrator', body: `Payment review for ${order.order_code} was manually authorized. You may begin fulfilment.`, link: `/order.html?id=${order.id}` });
+    await notify(c, { userId: order.buyer_id, type: 'admin_payment_override', title: 'Order payment review completed', body: `Your order ${order.order_code} was manually authorized by an administrator.`, link: `/order.html?id=${order.id}` });
+    res.json({ ok: true, order_id: order.id, state: 'READY_FOR_DISPATCH' });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
 
 router.put('/:id/specification', async (req, res) => {
   try { const c = client(req), order = await getOrder(c, req.params.id); if (!order || order.buyer_id !== req.user.id) return res.status(404).json({ error: 'Order not found.' }); if (!['CUSTOM_SPECIFICATION_REQUIRED', 'CORRECTION_REQUESTED'].includes(order.status)) return res.status(400).json({ error: 'This specification is locked or not needed.' }); const item = order.product_order_items[0]; const previous = [...(item.custom_specifications || [])].sort((a,b) => b.version_number-a.version_number)[0]; const b = req.body || {}; const { data: spec, error } = await c.from('custom_specifications').insert({ order_item_id: item.id, version_number: (previous?.version_number || 0) + 1, reference_images: b.reference_images || [], measurement_image_url: b.measurement_image_url || null, markers: b.markers || [], measurements: b.measurements || [], buyer_instructions: b.buyer_instructions || '', design_instructions: b.design_instructions || '', submitted_by: req.user.id }).select().single(); if (error) throw error; await c.from('product_order_items').update({ custom_specification_id: spec.id }).eq('id', item.id); await c.from('product_orders').update({ status: 'AWAITING_SELLER_ACCEPTANCE', updated_at: new Date().toISOString() }).eq('id', order.id); await audit(c, order.id, req.user.id, 'specification_submitted', previous || null, spec); await notify(c, { userId: order.seller_id, type: 'specification_review', title: 'Custom specification awaiting review', body: `Order ${order.order_code} needs your acceptance.`, link: '/orders.html' }); res.json(spec); } catch (e) { res.status(400).json({ error: e.message }); }
