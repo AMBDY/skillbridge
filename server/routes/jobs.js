@@ -158,11 +158,14 @@ router.post('/:id/duplicate', authMiddleware, async (req, res) => {
 router.post('/:id/bids', authMiddleware, async (req, res) => {
   const c = authedClient(req);
   const { amount, message, duration } = req.body;
+  const { data: job } = await c.from('jobs').select('user_id,title,status').eq('id', req.params.id).maybeSingle();
+  if (!job) return res.status(404).json({ error: 'Job not found.' });
+  if (job.user_id === req.user.id) return res.status(403).json({ error: 'You cannot bid on a job you created.' });
+  if (!['approved', 'open'].includes(job.status)) return res.status(409).json({ error: 'This job is not open for bids.' });
   const { data, error } = await c.from('job_bids').insert({
     job_id: req.params.id, user_id: req.user.id, amount, message, duration
   }).select().single();
   if (error) return res.status(400).json({ error: error.message });
-  const { data: job } = await supabase.from('jobs').select('user_id, title').eq('id', req.params.id).maybeSingle();
   if (job) await notify(c, { userId: job.user_id, type: 'new_bid', title: 'New bid on your job', body: `Someone bid ${amount} on "${job.title}"`, link: `/job.html?id=${req.params.id}` });
   res.json(data);
 });
@@ -197,6 +200,7 @@ router.post('/:id/apply', authMiddleware, async (req, res) => {
   const c = authedClient(req);
   const { data: job } = await supabase.from('jobs').select('*').eq('id', req.params.id).maybeSingle();
   if (!job) return res.status(404).json({ error: 'Not found' });
+  if (job.user_id === req.user.id) return res.status(403).json({ error: 'You cannot apply to a job you created.' });
   if (!['approved', 'open'].includes(job.status)) return res.status(400).json({ error: 'This job is not open for applications' });
 
   const { cover_letter, expected_price, duration, portfolio_url, resume_url, attachments } = req.body;
