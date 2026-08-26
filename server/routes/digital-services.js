@@ -46,6 +46,11 @@ router.get('/orders', authMiddleware, async (req, res) => {
   const c = client(req); const { data, error } = await c.from('digital_service_orders').select('*, service:services(id,images)').or(`client_id.eq.${req.user.id},provider_id.eq.${req.user.id}`).order('created_at', { ascending: false });
   if (error) return res.status(400).json({ error: error.message }); res.json(data || []);
 });
+router.get('/admin/orders', authMiddleware, async (req, res) => {
+  if (!hasPermission(req, 'manage_orders')) return res.status(403).json({ error: 'Finance or superadmin permission is required.' });
+  const { data, error } = await client(req).from('digital_service_orders').select('*').order('created_at', { ascending: false }).limit(100);
+  if (error) return res.status(400).json({ error: error.message }); res.json(data || []);
+});
 
 router.get('/orders/:id', authMiddleware, async (req, res) => {
   try { const c = client(req); const order = await getOrder(c, req.params.id); if (!order) return res.status(404).json({ error: 'Project not found.' }); const [deliveries, revisions, milestones, events, payment] = await Promise.all([c.from('digital_service_deliveries').select('*').eq('service_order_id', order.id).order('version_number'), c.from('digital_service_revisions').select('*').eq('service_order_id', order.id).order('requested_at'), c.from('digital_service_milestones').select('*').eq('service_order_id', order.id).order('position'), c.from('digital_service_events').select('*').eq('service_order_id', order.id).order('created_at'), c.from('payment_transactions').select('*').eq('service_order_id', order.id).maybeSingle()]); res.json({ ...order, deliveries: deliveries.data || [], revisions: revisions.data || [], milestones: milestones.data || [], events: events.data || [], payment: payment.data || null }); } catch (error) { res.status(400).json({ error: error.message }); }
@@ -57,6 +62,29 @@ router.post('/orders/:id/milestones', authMiddleware, async (req, res) => {
 
 router.put('/orders/:id/provider-review', authMiddleware, async (req, res) => {
   try { const c = client(req); const order = await getOrder(c, req.params.id); if (!order || order.provider_id !== req.user.id) return res.status(404).json({ error: 'Project not found.' }); if (order.status !== 'AWAITING_PROVIDER_ACCEPTANCE') return res.status(409).json({ error: 'This project is not awaiting provider review.' }); const accepted = req.body?.accepted === true; const next = accepted ? 'AWAITING_PAYMENT' : 'CLARIFICATION_REQUESTED'; const note = String(req.body?.note || '').trim(); await c.from('digital_service_orders').update({ status: next, provider_note: note || null, accepted_at: accepted ? new Date().toISOString() : null, updated_at: new Date().toISOString() }).eq('id', order.id); await event(c, order, order.status, next, accepted ? 'PROVIDER_ACCEPTED' : 'CLARIFICATION_REQUESTED', req.user.id, { note }); await notify(c, { userId: order.client_id, type: accepted ? 'digital_service_accepted' : 'digital_service_clarification', title: accepted ? 'Service request accepted' : 'Provider needs clarification', body: note || `Your ${order.title_snapshot} request was updated.`, link: `/service-order.html?id=${order.id}` }); res.json({ ...order, status: next }); } catch (error) { res.status(400).json({ error: error.message }); }
+});
+
+// Exceptional recovery for a verified offline/manual payment. This never
+// claims a provider verified payment; the mandatory reason and event record
+// preserve an auditable distinction from a webhook-confirmed payment.
+router.put('/orders/:id/admin-payment-override', authMiddleware, async (req, res) => {
+  try {
+    if (!hasPermission(req, 'manage_orders')) return res.status(403).json({ error: 'Finance or superadmin permission is required.' });
+    const reason = String(req.body?.reason || '').trim(); if (!reason) return res.status(400).json({ error: 'A reason is required for a manual payment override.' });
+    const c = client(req), order = await getOrder(c, req.params.id); if (!order) return res.status(404).json({ error: 'Project not found.' });
+    if (!['AWAITING_PAYMENT', 'PAYMENT_PROCESSING'].includes(order.status)) return res.status(409).json({ error: 'This project is not eligible for a payment override.' });
+    let { data: payment } = await c.from('payments').select('*').eq('service_order_id', order.id).maybeSingle();
+    if (!payment) { const { data, error } = await c.from('payments').insert({ service_order_id: order.id, client_id: order.client_id, worker_id: order.provider_id, amount: order.price, service_fee: 0, payment_method: 'admin_override', purpose: 'escrow', status: 'in_escrow', proof_meta: { admin_override: true, reason, approved_by: req.user.id } }).select().single(); if (error) throw error; payment = data; }
+    else await c.from('payments').update({ status: 'in_escrow', proof_meta: { ...(payment.proof_meta || {}), admin_override: true, reason, approved_by: req.user.id } }).eq('id', payment.id);
+    let { data: transaction } = await c.from('payment_transactions').select('*').eq('service_order_id', order.id).maybeSingle();
+    if (!transaction) { const { data, error } = await c.from('payment_transactions').insert({ payment_id: payment.id, service_order_id: order.id, buyer_id: order.client_id, seller_id: order.provider_id, skillbridge_reference: `SB-DG-ADM-${Date.now().toString().slice(-8)}${Math.random().toString(36).slice(2, 5).toUpperCase()}`, provider_code: 'ADMIN_OVERRIDE', amount: order.price, currency: order.currency, status: 'ADMIN_OVERRIDE_VERIFIED', verification_status: 'ADMIN_OVERRIDE', verified_at: new Date().toISOString(), metadata: { reason, approved_by: req.user.id } }).select().single(); if (error) throw error; transaction = data; }
+    else await c.from('payment_transactions').update({ status: 'ADMIN_OVERRIDE_VERIFIED', verification_status: 'ADMIN_OVERRIDE', verified_at: new Date().toISOString(), metadata: { ...(transaction.metadata || {}), reason, approved_by: req.user.id } }).eq('id', transaction.id);
+    await c.from('digital_service_orders').update({ status: 'PAID', paid_at: new Date().toISOString(), updated_at: new Date().toISOString() }).eq('id', order.id);
+    await event(c, order, order.status, 'PAID', 'ADMIN_PAYMENT_OVERRIDE', req.user.id, { reason, payment_id: payment.id, payment_transaction_id: transaction.id });
+    await notify(c, { userId: order.provider_id, type: 'admin_payment_override', title: 'Project payment authorized by administrator', body: `${order.title_snapshot} was manually authorized after payment review. You may begin work.`, link: `/service-order.html?id=${order.id}` });
+    await notify(c, { userId: order.client_id, type: 'admin_payment_override', title: 'Project payment review completed', body: `Your project ${order.title_snapshot} was manually authorized by an administrator.`, link: `/service-order.html?id=${order.id}` });
+    res.json({ ok: true, service_order_id: order.id, status: 'PAID' });
+  } catch (error) { res.status(400).json({ error: error.message }); }
 });
 
 router.post('/orders/:id/deliveries', authMiddleware, async (req, res) => {
