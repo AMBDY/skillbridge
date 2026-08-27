@@ -12,6 +12,12 @@ document.addEventListener('DOMContentLoaded', async () => {
 
   const conversations = await API.get('/chat/conversations').catch(() => []);
   renderConvList(conversations);
+  let peopleTimer;
+  document.getElementById('chatPeopleSearch')?.addEventListener('input', e => {
+    clearTimeout(peopleTimer); const query = e.target.value.trim(); const results = document.getElementById('chatPeopleResults');
+    if (query.length < 2) { results.innerHTML = ''; return; }
+    peopleTimer = setTimeout(async () => { const people = await API.get(`/chat/people?q=${encodeURIComponent(query)}`).catch(() => []); results.innerHTML = people.map(p => `<button class="chat-list-item" data-person="${p.user_id}" style="width:100%;border:0;background:transparent;text-align:left"><img src="${p.profile_image || 'https://images.pexels.com/photos/3777943/pexels-photo-3777943.jpeg'}" style="width:32px;height:32px;border-radius:50%;object-fit:cover"><div><strong>${p.display_name || 'User'}</strong><div style="font-size:.75rem;color:var(--text-muted)">${p.role || 'member'}</div></div></button>`).join('') || '<p class="card-meta">No matching people.</p>'; results.querySelectorAll('[data-person]').forEach(button => button.onclick = () => location.href = `/chat.html?to=${button.dataset.person}`); }, 250);
+  });
 
   // Auto-open conversation with ?to= param
   const to = new URLSearchParams(location.search).get('to');
@@ -68,7 +74,7 @@ document.addEventListener('DOMContentLoaded', async () => {
           <button class="btn btn-outline btn-sm" id="acceptBtn">Accept</button>
           <button class="btn btn-outline btn-sm" id="rejectBtn">Reject</button>
           <button class="btn btn-outline btn-sm" id="counterBtn">Counter</button>
-          ${['client', 'admin'].includes(user.role) ? '<button class="btn btn-gold btn-sm" id="agreementBtn">Agreement</button>' : ''}
+          ${['client', 'seller', 'admin'].includes(user.role) ? '<button class="btn btn-gold btn-sm" id="agreementBtn">Agreement</button>' : ''}
         </div>
       </div>
       <div class="chat-messages" id="messages"></div>
@@ -125,15 +131,19 @@ document.addEventListener('DOMContentLoaded', async () => {
         return;
       }
       try {
+        if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw new Error('Voice recording is not supported by this browser');
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         recordedChunks = [];
-        mediaRecorder = new MediaRecorder(stream);
+        const preferredType = ['audio/webm;codecs=opus', 'audio/webm', 'audio/ogg;codecs=opus'].find(type => MediaRecorder.isTypeSupported?.(type));
+        mediaRecorder = preferredType ? new MediaRecorder(stream, { mimeType: preferredType }) : new MediaRecorder(stream);
         mediaRecorder.ondataavailable = (e) => recordedChunks.push(e.data);
         mediaRecorder.onstop = async () => {
           stream.getTracks().forEach(t => t.stop());
           voiceBtn.textContent = '🎤';
-          const blob = new Blob(recordedChunks, { type: 'audio/webm' });
-          const file = new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' });
+          const type = mediaRecorder.mimeType || preferredType || 'audio/webm';
+          const blob = new Blob(recordedChunks, { type });
+          const extension = type.includes('ogg') ? 'ogg' : 'webm';
+          const file = new File([blob], `voice-${Date.now()}.${extension}`, { type });
           Toast.show('Uploading voice note...');
           try {
             const url = await Upload.file(file);
@@ -143,7 +153,7 @@ document.addEventListener('DOMContentLoaded', async () => {
         mediaRecorder.start();
         voiceBtn.textContent = '⏹';
         Toast.show('Recording... click again to stop');
-      } catch (e) { Toast.show('Microphone access denied'); }
+      } catch (e) { Toast.show(e.message || 'Microphone access was denied.'); }
     });
     document.getElementById('acceptBtn').addEventListener('click', () => {
       socket.emit('message', { conversation_id: activeConv, sender_id: user.user_id, body: '✅ Offer accepted — the "Received" button activates 1 hour after this.', message_type: 'text' });
