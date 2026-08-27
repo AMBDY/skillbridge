@@ -20,12 +20,14 @@ document.addEventListener('DOMContentLoaded', async () => {
     const online = document.getElementById('filterOnline').checked;
     let endpoint = ecosystem === 'jobs'
       ? `/jobs?category_id=${cat?.id || ''}`
-      : `/marketplace/${ecosystem === 'hire' ? 'services' : 'products'}?category_id=${cat?.id || ''}${sort !== 'recommended' ? `&sort=${sort}` : ''}`;
+      : ecosystem === 'hire'
+        ? `/marketplace/talent?category_id=${cat?.id || ''}&category_name=${encodeURIComponent(cat?.name || '')}`
+        : `/marketplace/products?category_id=${cat?.id || ''}${sort !== 'recommended' ? `&sort=${sort}` : ''}`;
     let items = await API.get(endpoint).catch(() => []);
     if (verified) items = items.filter(i => i.profiles?.kyc_level >= 3);
     if (online) items = items.filter(i => i.profiles?.is_online);
     if (!items.length) {
-      el.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--text-muted)">No listings in this category yet.</div>`;
+      el.innerHTML = `<div style="grid-column:1/-1;text-align:center;padding:48px;color:var(--text-muted)">${ecosystem === 'hire' ? 'No available talent profiles in this specialty yet.' : ecosystem === 'jobs' ? 'No jobs in this field yet.' : 'No products in this category yet.'}</div>`;
       return;
     }
     if (ecosystem === 'jobs') {
@@ -39,6 +41,13 @@ document.addEventListener('DOMContentLoaded', async () => {
             <a href="/job.html?id=${j.id}" class="btn btn-gold btn-sm" style="margin-top:8px">View & Bid</a></div>
           </div>
         </div>`).join('');
+    } else if (ecosystem === 'hire') {
+      el.className = 'grid grid-4';
+      el.innerHTML = items.map(person => {
+        const p = person.profile_sections || {};
+        const specialty = p.main_specialty || p.other_specialty || cat?.name || 'Professional';
+        return `<div class="card"><div class="card-body"><img src="${person.profile_image || 'https://images.pexels.com/photos/3777943/pexels-photo-3777943.jpeg'}" style="width:60px;height:60px;border-radius:50%;object-fit:cover"><div class="card-title" style="margin-top:8px">${person.display_name || 'Freelancer'}</div><div class="card-meta">${specialty}</div><div class="card-meta"><span class="stars">${stars(person.rating)}</span> ${person.review_count || 0} reviews · ${person.completion_rate || 0}% completion</div><div class="card-actions"><a href="/profile.html?id=${person.user_id}" class="btn btn-outline btn-sm">View profile</a><a href="/chat.html?to=${person.user_id}" class="btn btn-gold btn-sm">Discuss project</a></div></div></div>`;
+      }).join('');
     } else {
       el.className = 'grid grid-4';
       el.innerHTML = items.map(item => {
