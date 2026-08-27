@@ -162,9 +162,19 @@ async function applyHomepageSectionOrder() {
   } catch { /* homepage layout is non-critical — fall back to default order on any error */ }
 }
 
+async function applyHomepageMetrics() {
+  try {
+    const settings = await API.get('/marketplace/settings');
+    const m = settings.homepage_metrics || {};
+    const ids = { verified_users: 'metricVerifiedUsers', total_transactions: 'metricTransactions', satisfaction_rate: 'metricSatisfaction', support_availability: 'metricSupport' };
+    Object.entries(ids).forEach(([key, id]) => { if (m[key]?.value) document.getElementById(id).textContent = m[key].value; });
+  } catch { /* keep the safe starter figures when settings are unavailable */ }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
   renderAdSlot('#adSlotHomepage', 'homepage,landing');
   applyHomepageSectionOrder();
+  applyHomepageMetrics();
   initHero();
   renderFeaturedCats();
   renderTopSellers();
