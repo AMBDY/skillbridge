@@ -26,7 +26,12 @@ function initChatSockets(io, supabaseDefault) {
     socket.on('message', async (msg) => {
       try {
         const client = socket.authedClient || sb;
-        const { conversation_id, sender_id, body, message_type, file_url, original_language, translated_body } = msg;
+        const { data: authData } = await client.auth.getUser();
+        const sender_id = authData?.user?.id;
+        if (!sender_id) return socket.emit('error', { message: 'Sign in again before sending a message.' });
+        const { conversation_id, body, message_type, file_url, original_language, translated_body } = msg;
+        const { data: conversation } = await client.from('chat_conversations').select('id').eq('id', conversation_id).or(`user_a.eq.${sender_id},user_b.eq.${sender_id}`).maybeSingle();
+        if (!conversation) return socket.emit('error', { message: 'You are not a participant in this conversation.' });
         const { data, error } = await client.from('chat_messages').insert({
           conversation_id, sender_id, body, message_type: message_type || 'text',
           file_url, original_language, translated_body
