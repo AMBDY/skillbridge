@@ -34,12 +34,54 @@ router.get('/overview', async (req, res) => {
   res.json({ users: users.count || 0, jobs: jobs.count || 0, revenue, disputes: disputes.count || 0, kycPending: kyc.count || 0, subsPending: subs.count || 0 });
 });
 
+router.get('/homepage-metric-facts', async (req, res) => {
+  const c = authedClient(req);
+  const [verified, transactions, reviews] = await Promise.all([
+    c.from('profiles').select('id', { count: 'exact', head: true }).gte('kyc_level', 3),
+    c.from('product_orders').select('id', { count: 'exact', head: true }).eq('status', 'COMPLETED'),
+    c.from('reviews').select('stars')
+  ]);
+  const satisfaction = reviews.data?.length ? Math.round((reviews.data.reduce((sum, r) => sum + Number(r.stars || 0), 0) / (reviews.data.length * 5)) * 100) : 98;
+  res.json({ verified_users: `${verified.count || 0}`, total_transactions: `${transactions.count || 0}`, satisfaction_rate: `${satisfaction}%`, support_availability: '24/7' });
+});
+
 // Users
 router.get('/users', async (req, res) => {
   const c = authedClient(req);
   const { data, error } = await c.from('profiles').select('*').order('created_at', { ascending: false }).limit(100);
   if (error) return res.status(400).json({ error: error.message });
   res.json(data);
+});
+
+router.get('/profile-metric-rules', async (req, res) => {
+  const { data, error } = await authedClient(req).from('profile_metric_rules').select('*').order('created_at', { ascending: false });
+  if (error) return res.status(400).json({ error: error.message }); res.json(data || []);
+});
+router.post('/profile-metric-rules', async (req, res) => {
+  const b = req.body || {}; if (!['completion','hiring'].includes(b.metric_name) || !['user','role','specialty','service_type','new_user'].includes(b.scope_type) || Number(b.rate) < 0 || Number(b.rate) > 100) return res.status(400).json({ error: 'Choose a valid metric, scope, and rate from 0 to 100.' });
+  const { data, error } = await authedClient(req).from('profile_metric_rules').insert({ metric_name: b.metric_name, scope_type: b.scope_type, scope_value: b.scope_value || null, rate: Number(b.rate), is_active: b.is_active !== false, created_by: req.user.id }).select().single();
+  if (error) return res.status(400).json({ error: error.message }); res.status(201).json(data);
+});
+router.delete('/profile-metric-rules/:id', async (req, res) => { const { error } = await authedClient(req).from('profile_metric_rules').delete().eq('id', req.params.id); if (error) return res.status(400).json({ error: error.message }); res.json({ ok: true }); });
+
+router.get('/profile-specialties', async (req, res) => {
+  const c = authedClient(req);
+  const { data, error } = await c.from('profiles').select('user_id,display_name,email,profile_sections').not('profile_sections->>other_specialty', 'is', null).limit(200);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json((data || []).filter(p => String(p.profile_sections?.specialty_category_id || '') === 'other' && String(p.profile_sections?.other_specialty || '').trim()));
+});
+
+router.get('/notification-counts', async (req, res) => {
+  const c = authedClient(req); const today = new Date(); today.setHours(0, 0, 0, 0);
+  const since = today.toISOString();
+  const [messages, orders, agreements, disputes, kyc] = await Promise.all([
+    c.from('chat_messages').select('id', { count: 'exact', head: true }).gte('created_at', since),
+    c.from('product_orders').select('id', { count: 'exact', head: true }).in('status', ['AWAITING_SELLER_APPROVAL','AWAITING_PAYMENT','PAYMENT_PROCESSING']),
+    c.from('agreements').select('id', { count: 'exact', head: true }).in('status', ['active']).gte('finalized_at', since),
+    c.from('disputes').select('id', { count: 'exact', head: true }).gte('created_at', since).in('status', ['open','pending']),
+    c.from('kyc_submissions').select('id', { count: 'exact', head: true }).eq('status', 'pending')
+  ]);
+  res.json({ messages: messages.count || 0, logistics: orders.count || 0, agreements: agreements.count || 0, disputes: disputes.count || 0, kyc: kyc.count || 0 });
 });
 
 router.put('/users/:id', async (req, res) => {
