@@ -72,11 +72,21 @@ router.get('/services', async (req, res) => {
 // even before the person creates a separate service listing.
 router.get('/talent', async (req, res) => {
   const search = String(req.query.search || '').trim();
+  const categoryId = String(req.query.category_id || '').trim();
+  const categoryName = String(req.query.category_name || '').trim().toLowerCase();
   let query = supabase.from('profiles').select('user_id,display_name,profile_image,role,rating,review_count,completion_rate,availability,country,state,city,profile_sections,kyc_level').eq('role', 'freelancer').eq('availability', true).order('rating', { ascending: false }).limit(60);
   if (search) query = query.ilike('display_name', `%${search}%`);
   const { data, error } = await query;
   if (error) return res.status(400).json({ error: error.message });
-  res.json(data || []);
+  const people = (data || []).filter(profile => {
+    if (!categoryId && !categoryName) return true;
+    const s = profile.profile_sections || {};
+    if (categoryId && s.specialty_category_id === categoryId) return true;
+    // An "Other" specialty becomes discoverable as soon as an administrator
+    // creates a matching Hire Talent category.
+    return !!categoryName && String(s.other_specialty || '').trim().toLowerCase() === categoryName;
+  });
+  res.json(people);
 });
 
 router.post('/services', authMiddleware, async (req, res) => {
@@ -185,6 +195,14 @@ router.get('/profile/:userId', async (req, res) => {
   const { data, error } = await supabase.from('profiles').select('*').eq('user_id', req.params.userId).maybeSingle();
   if (error) return res.status(400).json({ error: error.message });
   if (!data) return res.status(404).json({ error: 'Profile not found' });
+  const metric = data.role === 'client' ? 'hiring' : 'completion';
+  const { data: rules } = await supabase.from('profile_metric_rules').select('*').eq('metric_name', metric).eq('is_active', true).order('created_at', { ascending: false });
+  const specialty = data.profile_sections?.specialty_category_id;
+  const ageDays = (Date.now() - new Date(data.created_at).getTime()) / 86400000;
+  const matches = (rules || []).filter(r => (r.scope_type === 'user' && r.scope_value === data.user_id) || (r.scope_type === 'role' && r.scope_value === data.role) || (r.scope_type === 'specialty' && r.scope_value === specialty) || (r.scope_type === 'new_user' && ageDays <= Number(r.scope_value || 30)));
+  const priority = { user: 4, specialty: 3, role: 2, new_user: 1, service_type: 0 };
+  const selected = matches.sort((a, b) => priority[b.scope_type] - priority[a.scope_type])[0];
+  if (selected) { data.completion_rate = Number(selected.rate); data.metric_source = 'admin_rule'; }
   res.json(data);
 });
 
@@ -350,7 +368,7 @@ router.get('/adsense', async (req, res) => {
 
 // Public: safe general settings (site name/logo/currency) for the frontend to render
 router.get('/settings', async (req, res) => {
-  const { data } = await supabase.from('platform_settings').select('site_name, logo_url, favicon_url, default_currency, default_timezone, homepage_sections').limit(1).maybeSingle();
+  const { data } = await supabase.from('platform_settings').select('site_name, logo_url, favicon_url, default_currency, default_timezone, homepage_sections, homepage_metrics').limit(1).maybeSingle();
   res.json(data || { site_name: 'SkillBridge' });
 });
 
