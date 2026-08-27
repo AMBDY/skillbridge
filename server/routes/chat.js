@@ -6,6 +6,10 @@ function authedClient(req) {
   const token = req.headers.authorization?.replace('Bearer ', '');
   return createAuthedClient(token);
 }
+async function isConversationMember(c, conversationId, userId) {
+  const { data } = await c.from('chat_conversations').select('id').eq('id', conversationId).or(`user_a.eq.${userId},user_b.eq.${userId}`).maybeSingle();
+  return !!data;
+}
 
 // List conversations
 router.get('/conversations', authMiddleware, async (req, res) => {
@@ -29,10 +33,20 @@ router.get('/conversations', authMiddleware, async (req, res) => {
   res.json(enriched);
 });
 
+// A small, privacy-safe people picker for starting a new conversation.
+router.get('/people', authMiddleware, async (req, res) => {
+  const q = String(req.query.q || '').trim();
+  if (q.length < 2) return res.json([]);
+  const { data, error } = await supabase.from('profiles').select('user_id,display_name,profile_image,role,profile_sections').neq('user_id', req.user.id).ilike('display_name', `%${q}%`).limit(12);
+  if (error) return res.status(400).json({ error: error.message });
+  res.json(data || []);
+});
+
 // Create or get conversation
 router.post('/conversations', authMiddleware, async (req, res) => {
   const c = authedClient(req);
   const { other_user_id, related_job_id, related_listing_id } = req.body;
+  if (!other_user_id || other_user_id === req.user.id) return res.status(400).json({ error: 'Choose another account to start a conversation.' });
   const a = [req.user.id, other_user_id].sort()[0];
   const b = [req.user.id, other_user_id].sort()[1];
   let existingQuery = c.from('chat_conversations').select('*').eq('user_a', a).eq('user_b', b);
@@ -69,6 +83,7 @@ router.get('/conversations/:id/messages', authMiddleware, async (req, res) => {
 // Send message (REST fallback; primary path is socket)
 router.post('/conversations/:id/messages', authMiddleware, async (req, res) => {
   const c = authedClient(req);
+  if (!(await isConversationMember(c, req.params.id, req.user.id))) return res.status(403).json({ error: 'You are not a participant in this conversation.' });
   const { body, message_type, file_url, original_language, translated_body } = req.body;
   const { data, error } = await c.from('chat_messages').insert({
     conversation_id: req.params.id, sender_id: req.user.id, body, message_type, file_url, original_language, translated_body
