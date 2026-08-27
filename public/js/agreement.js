@@ -13,7 +13,7 @@ document.addEventListener('DOMContentLoaded', () => {
     <div class="form-group"><label class="form-label">Scope, responsibilities, and deliverables</label><textarea class="form-textarea" name="scope" rows="5" required></textarea></div>
     <div class="form-group"><label class="form-label">Payment terms, milestones, conditions, and warranties</label><textarea class="form-textarea" name="terms" rows="5" required></textarea></div>
     <details class="card" style="padding:12px"><summary style="cursor:pointer">Additional required parties</summary><p style="color:var(--text-muted);font-size:.9rem">One party per line: account ID | name | role.</p><textarea class="form-textarea" name="additional_parties" rows="3"></textarea></details>
-    <label style="display:flex;gap:8px;margin:16px 0"><input type="checkbox" required> I confirm this information is accurate and I am authorized to submit it.</label><button class="btn btn-gold btn-block btn-lg">Submit agreement for administrator review</button>
+    <label style="display:flex;gap:8px;margin:16px 0"><input type="checkbox" required> I confirm this information is accurate and I am authorized to send it.</label><button class="btn btn-gold btn-block btn-lg">Send agreement to the other party</button>
   </form>`;
   form.querySelector('form').addEventListener('submit', async e => {
     e.preventDefault();
@@ -24,6 +24,6 @@ document.addEventListener('DOMContentLoaded', () => {
     data.details = { scope: data.scope, terms: data.terms };
     data.additional_parties = data.additional_parties.split('\n').map(line => line.trim()).filter(Boolean).map(line => { const [user_id, party_name, party_role] = line.split('|').map(v => v.trim()); return { user_id, party_name, party_role }; });
     delete data.scope; delete data.terms;
-    try { await API.post('/agreements', data); Toast.show('Agreement submitted for administrator review.'); setTimeout(() => location.href = conversation ? `/chat.html?to=${worker}${job ? `&job=${job}` : ''}${listing ? `&listing=${listing}` : ''}` : '/agreements.html', 700); } catch (err) { Toast.show(err.message); }
+    try { const agreement = await API.post('/agreements', data); Toast.show('Agreement sent to the other party.'); setTimeout(() => location.href = conversation ? `/chat.html?to=${worker}${job ? `&job=${job}` : ''}${listing ? `&listing=${listing}` : ''}` : `/agreements.html?agreement=${agreement.id}`, 700); } catch (err) { Toast.show(err.message); }
   });
 });
