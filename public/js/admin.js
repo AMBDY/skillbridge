@@ -5,7 +5,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('adminMain').innerHTML = '<p>Admin access required. Contact the platform owner.</p>';
     return;
   }
-
   const sections = [
     { id: 'overview', label: 'Overview' },
     { id: 'god-eye', label: 'Eagle Eye Control Room' },
@@ -43,13 +42,15 @@ document.addEventListener('DOMContentLoaded', async () => {
   ];
   const nav = document.getElementById('adminNav');
   nav.innerHTML = sections.map(s => `<a href="#" data-sec="${s.id}" class="${s.id === 'overview' ? 'active' : ''}">${s.label}</a>`).join('');
+  nav.innerHTML = sections.map(s => `<a href="#" data-sec="${s.id}" class="${s.id === 'overview' ? 'active' : ''}">${s.label}<span class="admin-nav-badge" data-badge="${s.id}" style="display:none;margin-left:7px;background:#d92d20;color:#fff;border-radius:99px;min-width:18px;padding:1px 5px;text-align:center;font-size:.72rem"></span></a>`).join('');
+  const refreshNavBadges = async () => { try { const counts = await API.get('/admin/notification-counts'); const map = { messages: counts.messages, logistics: counts.logistics, agreements: counts.agreements, disputes: counts.disputes, kyc: counts.kyc }; Object.entries(map).forEach(([key, value]) => { const badge = nav.querySelector(`[data-badge="${key}"]`); if (badge) { badge.textContent = value > 99 ? '99+' : value; badge.style.display = value ? 'inline-block' : 'none'; } }); } catch {} };
+  refreshNavBadges(); setInterval(refreshNavBadges, 60000);
   nav.querySelectorAll('a').forEach(a => a.addEventListener('click', (e) => {
     e.preventDefault();
     nav.querySelectorAll('a').forEach(x => x.classList.remove('active'));
     a.classList.add('active');
     load(a.dataset.sec);
   }));
-
   async function load(sec) {
     const main = document.getElementById('adminMain');
     main.innerHTML = '<div class="skeleton" style="height:200px"></div>';
@@ -89,7 +90,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       if (sec === 'settings') return await loadSettings();
     } catch (e) { main.innerHTML = `<p>Error: ${e.message}</p>`; }
   }
-
   async function loadOverview() {
     const s = await API.get('/admin/overview');
     document.getElementById('adminMain').innerHTML = `
@@ -103,7 +103,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div class="stat-card"><div class="stat-num">${s.subsPending}</div><div class="stat-label">Subs Pending</div></div>
       </div>`;
   }
-
   async function loadGodEye() {
     const [monitor, sellers] = await Promise.all([API.get('/admin/god-eye'), API.get('/admin/top-sellers')]);
     const featured = sellers.featured || [], recommendations = sellers.recommendations || [], accounts = sellers.accounts || [];
@@ -127,11 +126,12 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.promoteTopSeller = async id => { try { await API.post(`/admin/top-sellers/${id}`,{});Toast.show('Added to featured Top Sellers');load('god-eye')}catch(e){Toast.show(e.message)} };
   window.removeTopSeller = async id => { if (!confirm('Remove from Top Sellers? The account and listings will stay active.')) return; try { await API.del(`/admin/top-sellers/${id}`);load('god-eye')}catch(e){Toast.show(e.message)} };
   window.moveTopSeller = async (index, direction) => { const rows=[...(window.__featuredTopSellers||[])]; const next=index+direction;if(next<0||next>=rows.length)return;[rows[index],rows[next]]=[rows[next],rows[index]];try{await API.put('/admin/top-sellers/reorder',{user_ids:rows.map(row=>row.user_id)});load('god-eye')}catch(e){Toast.show(e.message)} };
-
   async function loadUsers() {
     const [users, roles] = await Promise.all([API.get('/admin/users'), API.get('/admin/builder/roles')]);
+    const [users, roles, rules] = await Promise.all([API.get('/admin/users'), API.get('/admin/builder/roles'), API.get('/admin/profile-metric-rules')]);
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Users</h1>
+      <div class="card" style="margin:18px 0;padding:16px"><h3>Completion and hiring-rate rules</h3><p class="card-meta">Actual jobs and KYC-approved reviews calculate rates normally. Use a rule only when you need an administrator-controlled display rate for a user, role, specialty, or new accounts.</p><div class="grid grid-4"><select class="form-select" id="metricName"><option value="completion">Completion</option><option value="hiring">Hiring</option></select><select class="form-select" id="metricScope"><option value="user">Specific user ID</option><option value="role">Role</option><option value="specialty">Specialty category ID</option><option value="new_user">New users (days)</option></select><input class="form-input" id="metricScopeValue" placeholder="User ID, role, category ID, or days"><input class="form-input" id="metricRate" type="number" min="0" max="100" placeholder="Rate %"></div><button class="btn btn-gold btn-sm" style="margin-top:10px" onclick="addProfileMetricRule()">Add rate rule</button>${rules.length ? `<div style="margin-top:12px">${rules.map(r => `<p>${r.metric_name} · ${r.scope_type}: ${r.scope_value || 'all'} → <strong>${r.rate}%</strong> <button class="btn btn-outline btn-sm" onclick="deleteProfileMetricRule('${r.id}')">Delete</button></p>`).join('')}</div>` : ''}</div>
       <table class="table" style="margin-top:24px"><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>KYC</th><th>Tier</th><th>Status</th><th>Actions</th></tr></thead><tbody>
       ${users.map(u => `<tr>
         <td>${u.display_name}</td><td>${u.email || ''}</td><td>${u.role}</td><td>L${u.kyc_level}</td><td>${u.subscription_tier}</td>
@@ -146,6 +146,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       </tbody></table>`;
   }
   window.assignUserRole = async (id, role) => { if (!role) return; try { await API.put(`/admin/users/${id}`, { role }); Toast.show('User role updated'); load('users'); } catch(e) { Toast.show(e.message); } };
+  window.addProfileMetricRule = async () => { try { await API.post('/admin/profile-metric-rules', { metric_name: document.getElementById('metricName').value, scope_type: document.getElementById('metricScope').value, scope_value: document.getElementById('metricScopeValue').value.trim(), rate: Number(document.getElementById('metricRate').value) }); Toast.show('Rate rule added'); load('users'); } catch(e) { Toast.show(e.message); } };
+  window.deleteProfileMetricRule = async id => { if (!confirm('Delete this rate rule?')) return; try { await API.del(`/admin/profile-metric-rules/${id}`); Toast.show('Rate rule deleted'); load('users'); } catch(e) { Toast.show(e.message); } };
   window.setAccountStatus = async (id, account_status) => {
     if (account_status === 'active') {
       try { await API.put(`/admin/users/${id}`, { account_status }); Toast.show('Account restored'); load('users'); }
@@ -157,7 +159,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       catch (e) { Toast.show(e.message); }
     });
   };
-
   async function loadKyc() {
     const [items, duplicateChecks] = await Promise.all([API.get('/admin/kyc'), API.get('/admin/kyc/duplicate-checks').catch(() => [])]);
     document.getElementById('adminMain').innerHTML = `
@@ -189,7 +190,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   };
   window.scanKycDuplicates = async () => { try { const result=await API.post('/admin/kyc/duplicate-scan',{}); Toast.show(`Scanned ${result.scanned} submissions; ${result.flagged} flagged.`); load('kyc'); } catch(e) { Toast.show(e.message); } };
   window.reviewKycDuplicate = async (id,status) => { try { await API.put(`/admin/kyc/duplicate-checks/${id}`,{status}); load('kyc'); } catch(e) { Toast.show(e.message); } };
-
   async function loadJobs() {
     const jobs = await API.get('/admin/jobs');
     const activeJobs = jobs.filter(j => j.status !== 'deleted_by_owner');
@@ -240,7 +240,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       load('jobs');
     });
   };
-
   async function loadListings() {
     const [{ products, services }, all] = await Promise.all([
       API.get('/admin/listings/pending'),
@@ -248,7 +247,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     ]);
     const pending = [...products.map(p => ({ ...p, type: 'products' })), ...services.map(s => ({ ...s, type: 'services' }))];
     const active = [...all.products.map(p => ({ ...p, type: 'products' })), ...all.services.map(s => ({ ...s, type: 'services' }))].filter(l => l.status === 'active');
-
     function listingCard(l, actionsHtml) {
       return `<div class="card" style="margin-top:12px"><div class="card-body">
         <div style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:12px">
@@ -262,17 +260,14 @@ document.addEventListener('DOMContentLoaded', async () => {
         </div>
       </div></div>`;
     }
-
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Listings Moderation</h1>
       <p class="section-sub">Products and services wait here until approved — nothing goes live without your review.</p>
-
       <h3 style="margin-top:20px">Pending Approval (${pending.length})</h3>
       ${pending.length ? pending.map(l => listingCard(l, `
         <button class="btn btn-gold btn-sm" onclick="setListingStatus('${l.type}','${l.id}','active')">Approve</button>
         <button class="btn btn-outline btn-sm" onclick="rejectListing('${l.type}','${l.id}')">Reject</button>
       `)).join('') : '<p style="color:var(--text-muted)">Nothing pending.</p>'}
-
       <h3 style="margin-top:28px">Live Listings (${active.length})</h3>
       ${active.length ? active.map(l => listingCard(l, `
         <button class="btn btn-outline btn-sm" onclick="pauseListing('${l.type}','${l.id}')">Pause</button>
@@ -312,9 +307,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.body.append(modal); modal.querySelector('#closeListingView').onclick = () => modal.remove(); modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
     } catch (e) { Toast.show(e.message); }
   };
-
   async function loadCatalogControls() {
     const [categories, controls] = await Promise.all([API.get('/admin/categories'), API.get('/admin/form-controls')]);
+    const [categories, controls, otherSpecialties] = await Promise.all([API.get('/admin/categories'), API.get('/admin/form-controls'), API.get('/admin/profile-specialties')]);
     const fields = {
       product_listing: ['category_id','title','description','price','stock','location','brand','size','color','gender','fulfillment_type','production_days','supported_sizes','measurement_template_id','detail_sku','detail_dimensions','detail_shipping','detail_delivery_fee','detail_returns','detail_variations','detail_specifications'],
       recruitment_posting: ['title','company_name','description','responsibilities','required_skills','experience_required','education_requirement','salary','location','deadline','ai_plan','video_enabled','question_mode','manual_questions']
@@ -323,6 +318,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     const controlMap = new Map(controls.map(c => [`${c.form_key}:${c.field_key}`, c]));
     const controlsHtml = Object.entries(fields).map(([formKey, keys]) => `<details class="card" style="padding:14px;margin-top:12px"><summary style="cursor:pointer;font-weight:600">${formKey.replaceAll('_',' ')} fields</summary><p style="color:var(--text-muted);font-size:.9rem">Visibility changes the public form. Required changes the browser requirement; server-required fields remain protected.</p>${keys.map((key,index) => { const c = controlMap.get(`${formKey}:${key}`) || {}; return `<div class="grid grid-2" style="border-top:1px solid var(--border);padding:10px 0"><div><strong>${key}</strong><input class="form-input form-control-label" data-form="${formKey}" data-key="${key}" value="${c.label || ''}" placeholder="Custom label (optional)"><input class="form-input form-control-help" data-form="${formKey}" data-key="${key}" value="${c.help_text || ''}" placeholder="Help text (optional)" style="margin-top:6px"></div><div style="display:flex;gap:14px;align-items:center"><label><input type="checkbox" class="form-control-visible" data-form="${formKey}" data-key="${key}" ${c.is_visible !== false ? 'checked' : ''}> Visible</label><label><input type="checkbox" class="form-control-required" data-form="${formKey}" data-key="${key}" ${c.is_required ? 'checked' : ''}> Required</label><button class="btn btn-outline btn-sm" onclick="saveFormControl('${formKey}','${key}',${index})">Save</button></div></div>`; }).join('')}</details>`).join('');
     document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Categories & Form Controls</h1><p class="section-sub">Manage marketplace categories and decide which supported product/recruitment fields users see, how they are labelled, and whether they are compulsory.</p><div class="card" style="margin-top:20px"><div class="card-body"><h3>Add category</h3><div class="grid grid-2"><input class="form-input" id="catName" placeholder="Category name"><select class="form-select" id="catEcosystem"><option value="shop">Shop / products</option><option value="hire">Hire / services</option><option value="jobs">Jobs</option></select><input class="form-input" id="catSlug" placeholder="Optional URL slug"><input class="form-input" id="catIcon" placeholder="Optional icon / emoji"><textarea class="form-textarea" id="catDescription" placeholder="Description"></textarea><input class="form-input" id="catSort" type="number" placeholder="Display order"></div><button class="btn btn-gold btn-sm" onclick="addCategoryAdmin()">Add category</button></div></div><h3 style="margin-top:24px">Existing categories</h3>${categories.map(c => `<div class="card" style="padding:12px;margin-top:8px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><strong>${c.name}</strong> <span class="badge badge-kyc">${c.ecosystem}</span><div class="card-meta">${c.slug} · ${c.is_active === false ? 'Hidden' : 'Visible'}</div><p>${c.description || ''}</p></div><div><button class="btn btn-outline btn-sm" onclick="editCategoryAdmin('${c.id}')">Edit</button><button class="btn btn-outline btn-sm" onclick="toggleCategoryAdmin('${c.id}',${c.is_active !== false})">${c.is_active === false ? 'Show' : 'Hide'}</button><button class="btn btn-outline btn-sm" onclick="deleteCategoryAdmin('${c.id}')">Delete</button></div></div></div>`).join('')}${controlsHtml}`;
+    document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Categories & Form Controls</h1><p class="section-sub">Manage marketplace categories and decide which supported product/recruitment fields users see, how they are labelled, and whether they are compulsory.</p><div class="card" style="margin-top:20px"><div class="card-body"><h3>Add category</h3><div class="grid grid-2"><input class="form-input" id="catName" placeholder="Category name"><select class="form-select" id="catEcosystem"><option value="shop">Shop / products</option><option value="hire">Hire / services</option><option value="jobs">Jobs</option></select><input class="form-input" id="catSlug" placeholder="Optional URL slug"><input class="form-input" id="catIcon" placeholder="Optional icon / emoji"><textarea class="form-textarea" id="catDescription" placeholder="Description"></textarea><input class="form-input" id="catSort" type="number" placeholder="Display order"></div><button class="btn btn-gold btn-sm" onclick="addCategoryAdmin()">Add category</button></div></div><div class="card" style="margin-top:20px"><div class="card-body"><h3>Requested “Other” specialties</h3><p class="card-meta">Create a matching Hire category and these profiles will appear in it automatically.</p>${otherSpecialties.length ? otherSpecialties.map(p => `<p><strong>${p.display_name || p.email || 'User'}</strong> — ${p.profile_sections.other_specialty}</p>`).join('') : '<p class="card-meta">No unclassified specialty requests.</p>'}</div></div><h3 style="margin-top:24px">Existing categories</h3>${categories.map(c => `<div class="card" style="padding:12px;margin-top:8px"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><strong>${c.name}</strong> <span class="badge badge-kyc">${c.ecosystem}</span><div class="card-meta">${c.slug} · ${c.is_active === false ? 'Hidden' : 'Visible'}</div><p>${c.description || ''}</p></div><div><button class="btn btn-outline btn-sm" onclick="editCategoryAdmin('${c.id}')">Edit</button><button class="btn btn-outline btn-sm" onclick="toggleCategoryAdmin('${c.id}',${c.is_active !== false})">${c.is_active === false ? 'Show' : 'Hide'}</button><button class="btn btn-outline btn-sm" onclick="deleteCategoryAdmin('${c.id}')">Delete</button></div></div></div>`).join('')}${controlsHtml}`;
     window.__adminCategories = categories;
   }
   window.addCategoryAdmin = async () => { try { await API.post('/admin/categories',{name:document.getElementById('catName').value.trim(),ecosystem:document.getElementById('catEcosystem').value,slug:document.getElementById('catSlug').value.trim(),icon:document.getElementById('catIcon').value.trim(),description:document.getElementById('catDescription').value.trim(),sort_order:Number(document.getElementById('catSort').value||0)});Toast.show('Category added');load('catalog')}catch(e){Toast.show(e.message)} };
@@ -330,7 +326,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.toggleCategoryAdmin = async (id, active) => { try { await API.put(`/admin/categories/${id}`,{is_active:!active});load('catalog') } catch(e){Toast.show(e.message)} };
   window.deleteCategoryAdmin = async id => { if(!confirm('Delete this unused category?'))return;try{await API.del(`/admin/categories/${id}`);load('catalog')}catch(e){Toast.show(e.message)} };
   window.saveFormControl = async (formKey, fieldKey, sort) => { const selector = value => document.querySelector(`${value}[data-form="${formKey}"][data-key="${fieldKey}"]`); try { await API.put(`/admin/form-controls/${formKey}/${fieldKey}`,{label:selector('.form-control-label').value.trim(),help_text:selector('.form-control-help').value.trim(),is_visible:selector('.form-control-visible').checked,is_required:selector('.form-control-required').checked,sort_order:sort});Toast.show('Form field updated'); } catch(e){Toast.show(e.message)} };
-
   async function loadLogistics() {
     const [providers, orders, templates, paymentProviders, paymentMethods, digitalSettings, digitalOrders] = await Promise.all([API.get('/logistics/providers'), API.get('/orders/admin/all'), API.get('/orders/admin/templates'), API.get('/admin/payment-providers'), API.get('/admin/payment-methods'), API.get('/digital-services/settings'), API.get('/digital-services/admin/orders')]);
     document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Orders & Logistics</h1><p class="section-sub">Provider credentials are server-side configuration only. Do not enter secret keys in browser-visible fields.</p>
@@ -360,13 +355,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   window.reconcileOrderPayment = async id => { if (!confirm('Run a fresh server-side provider verification?')) return; try { await API.post(`/payments/product-orders/${id}/reconcile`,{}); Toast.show('Provider verification completed');load('logistics') } catch(e) { Toast.show(e.message); } };
   window.overrideOrderPayment = async id => { const reason=prompt('Reason for this exceptional manual payment override:'); if(!reason)return; if(!confirm('This authorizes fulfilment without a verified provider response. Continue only after independent payment confirmation.'))return; try{await API.put(`/orders/${id}/admin-payment-override`,{reason});Toast.show('Order authorized and fully audited.');load('logistics')}catch(e){Toast.show(e.message)}};
   window.reviewProductRefund = async (id, approved) => { const reason = prompt(approved ? 'Reason / provider refund reference (optional):' : 'Reason for rejecting refund:') || ''; try { await API.put(`/orders/${id}/refund-review`, { approved, reason }); Toast.show(approved ? 'Refund approved for provider processing' : 'Refund rejected'); load('logistics'); } catch(e) { Toast.show(e.message); } };
-
   // Messages — broadcast to everyone/a role, or a direct chat message to one account
   async function loadMessages() {
     const [users, campaigns] = await Promise.all([API.get('/admin/users'), API.get('/admin/message-campaigns').catch(()=>[])]);
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Messages</h1>
-
       <div class="card" style="margin:20px 0"><div class="card-body">
         <h3>Broadcast</h3>
         <p style="color:var(--text-muted);font-size:0.85rem">Sends a real notification to every matching account — appears in their notification bell immediately.</p>
@@ -388,7 +381,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         <button class="btn btn-gold btn-sm" onclick="sendBroadcast()">Send Broadcast</button>
         <div id="broadcastResult" style="margin-top:10px;font-size:0.85rem;color:var(--text-muted)"></div>
       </div></div><div class="card" style="margin:20px 0"><div class="card-body"><h3>Recent automatic / manual message campaigns</h3>${campaigns.map(c=>`<p><strong>${c.title}</strong> · ${c.reason_code} · ${c.delivery_mode} · ${c.sent_at?new Date(c.sent_at).toLocaleString():'Saved'}</p>`).join('')||'<p class="card-meta">No campaign history yet.</p>'}</div></div>
-
       <div class="card"><div class="card-body">
         <h3>Message an Individual Account</h3>
         <p style="color:var(--text-muted);font-size:0.85rem">Opens a real chat conversation with them — same inbox as any other message on the site.</p>
@@ -438,7 +430,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       document.getElementById('directMedia').value = '';
     } catch (e) { resEl.textContent = 'Error: ' + e.message; }
   };
-
   async function loadRecruitmentJobs() {
     const jobs = await API.get('/recruitment/admin/jobs');
     const grouped = jobs.reduce((groups, job) => {
@@ -495,7 +486,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       load('recruitment');
     });
   };
-
   async function loadDisputes() {
     const d = await API.get('/admin/disputes');
     document.getElementById('adminMain').innerHTML = `
@@ -507,7 +497,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   window.resolveDispute = async (id, status) => { await API.put(`/admin/disputes/${id}`, { status }); Toast.show('Dispute ' + status); load('disputes'); };
   window.deleteDispute = async id => { if (!confirm('Delete this dispute?')) return; try { await API.del(`/admin/disputes/${id}`); Toast.show('Dispute deleted'); load('disputes'); } catch(e) { Toast.show(e.message); } };
-
   async function loadPayments() {
     const p = await API.get('/admin/payments');
     document.getElementById('adminMain').innerHTML = `
@@ -518,7 +507,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       </tbody></table>`;
   }
   window.releasePay = async (id) => { await API.put(`/admin/payments/${id}/release`); Toast.show('Payment released to worker'); load('payments'); };
-
   async function loadRevenue() {
     const p = await API.get('/admin/payments');
     const released = p.filter(x => x.status === 'released');
@@ -528,7 +516,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       <div class="stat-card" style="margin-top:24px"><div class="stat-num">${fmtPrice(total)}</div><div class="stat-label">Total platform fees collected</div></div>
       <p style="margin-top:16px;color:var(--text-soft)">${released.length} completed transactions.</p>`;
   }
-
   async function loadAudit() {
     const a = await API.get('/admin/audit');
     document.getElementById('adminMain').innerHTML = `
@@ -537,7 +524,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       ${a.map(x => `<tr><td>${x.actor?.display_name || 'system'}</td><td>${x.action}</td><td>${x.target_type || ''}</td><td>${timeAgo(x.created_at)}</td></tr>`).join('') || '<tr><td colspan="4">No logs.</td></tr>'}
       </tbody></table>`;
   }
-
   async function loadSubs() {
     const s = await API.get('/admin/subscriptions');
     document.getElementById('adminMain').innerHTML = `
@@ -559,7 +545,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     Toast.show('Subscription ' + status);
     load('subs');
   };
-
   async function loadAI() {
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">AI Ranking Control</h1>
@@ -575,7 +560,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         <button class="btn btn-gold" onclick="Toast.show('AI weights saved (placeholder)')">Save Weights</button>
       </div></div>`;
   }
-
   async function loadAds() {
     const ads = await API.get('/admin/ads');
     document.getElementById('adminMain').innerHTML = `
@@ -642,7 +626,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     finally { if (btn) { btn.disabled = false; btn.textContent = 'Create Ad'; } }
   };
   window.deleteAd = async (id) => { await API.del(`/admin/ads/${id}`); Toast.show('Ad deleted'); load('ads'); };
-
+  window.deleteAd = async (id) => { if (!confirm('Delete this advertisement?')) return; await API.del(`/admin/ads/${id}`); Toast.show('Ad deleted'); load('ads'); };
   // Google AdSense — real Google ad network, distinct from the custom ads system above.
   const ADSENSE_PLACEMENTS = [
     { key: 'homepage_banner', label: 'Homepage Banner', note: 'Renders near the top of the homepage.' },
@@ -658,7 +642,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Google AdSense</h1>
       <p class="section-sub">Google's ad network — Google chooses what ad shows and pays you per impression/click. This is separate from "Content & Ads" above, which is your own manually-placed sponsored content.</p>
-
       <div class="card" style="margin:20px 0"><div class="card-body">
         <h3>How this works</h3>
         <ol style="padding-left:18px;color:var(--text-soft);line-height:1.7">
@@ -668,13 +651,11 @@ document.addEventListener('DOMContentLoaded', async () => {
           <li>Turn on "Enable AdSense" below. Google's script loads automatically on every page from then on, and each placement fills in wherever this site already has a spot for it.</li>
         </ol>
       </div></div>
-
       <div class="card" style="margin-bottom:20px"><div class="card-body">
         <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="adsenseEnabled" ${settings?.adsense_enabled ? 'checked' : ''}> Enable Google AdSense site-wide</label>
         <div class="form-group" style="margin-top:12px;max-width:420px"><label class="form-label">Publisher ID</label><input class="form-input" id="adsensePubId" placeholder="ca-pub-1234567890123456" value="${settings?.adsense_publisher_id || ''}"></div>
         <button class="btn btn-gold" style="margin-top:8px" onclick="saveAdsenseGlobal()">Save</button>
       </div></div>
-
       <h3>Ad Placements</h3>
       ${ADSENSE_PLACEMENTS.map(p => {
         const u = unitMap.get(p.key);
@@ -715,7 +696,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       load('adsense');
     } catch (e) { Toast.show(e.message); }
   };
-
   // Blog / News
   function slugify(title) { return title.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, ''); }
   async function loadBlog() {
@@ -776,7 +756,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) { Toast.show(e.message); }
   };
   window.deleteBlogPost = async (id) => { await API.del(`/admin/blog/${id}`); Toast.show('Post deleted'); load('blog'); };
-
+  window.deleteBlogPost = async (id) => { if (!confirm('Delete this blog post?')) return; await API.del(`/admin/blog/${id}`); Toast.show('Post deleted'); load('blog'); };
   // Site Content — key/value editable blocks per page
   const CONTENT_PAGES = {
     homepage_hero: ['hero_title', 'hero_subtitle', 'cta_hire_label', 'cta_shop_label', 'cta_jobs_label', 'meta_title', 'meta_description'],
@@ -796,11 +776,9 @@ document.addEventListener('DOMContentLoaded', async () => {
     const map = new Map(rows.map(r => [`${r.page_key}:${r.section_key}`, r]));
     let heroImages = [];
     try { heroImages = JSON.parse(map.get('homepage_hero:hero_images')?.value || '[]'); } catch { heroImages = []; }
-
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Site Content</h1>
       <p class="section-sub">Edit text blocks shown on public pages. Changes go live immediately.</p>
-
       <div class="card" style="margin-top:20px"><div class="card-body">
         <h3>Hero Slideshow Images</h3>
         <p style="color:var(--text-muted);font-size:0.85rem">Shown on the homepage, auto-rotating every 5 seconds.</p>
@@ -808,7 +786,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         <div id="heroImagesPreview" style="margin-top:12px;display:flex;gap:10px;flex-wrap:wrap"></div>
         <button class="btn btn-gold btn-sm" style="margin-top:12px" onclick="saveHeroImages()">Save Slideshow</button>
       </div></div>
-
       ${Object.entries(CONTENT_PAGES).map(([page, sections]) => `
         <div class="card" style="margin-top:20px"><div class="card-body">
           <h3 style="text-transform:capitalize">${page.replace('_', ' ')}</h3>
@@ -819,7 +796,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           }).join('')}
            <button class="btn btn-gold btn-sm" onclick="saveSiteContent('${page}')">Save ${page.replace('_', ' ')}</button>
         </div></div>`).join('')}`;
-
     window.__heroImages = heroImages;
     renderHeroImagesPreview();
     document.getElementById('heroImagesInput').addEventListener('change', async () => {
@@ -860,7 +836,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       Toast.show('Saved');
     } catch (e) { Toast.show(e.message); }
   };
-
   // Homepage Builder — real drag-and-drop reordering of the actual homepage sections
   const HOMEPAGE_SECTION_LABELS = {
     hero: 'Hero Slideshow', trust: 'Trust Indicators', ecosystems: 'Hire/Shop/Jobs Ecosystems',
@@ -872,18 +847,21 @@ document.addEventListener('DOMContentLoaded', async () => {
     const saved = Array.isArray(settings?.homepage_sections) && settings.homepage_sections.length
       ? settings.homepage_sections
       : Object.keys(HOMEPAGE_SECTION_LABELS).map(key => ({ key, visible: true }));
+    const metricDefaults = { verified_users: '12K+', total_transactions: '₦2.4B', satisfaction_rate: '98%', support_availability: '24/7' };
+    const metrics = settings.homepage_metrics || {};
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Homepage Builder</h1>
       <p class="section-sub">Drag to reorder. Uncheck to hide a section entirely. Changes apply live on the homepage.</p>
       <div id="hpSectionList" style="margin:20px 0;max-width:520px;display:flex;flex-direction:column;gap:8px"></div>
       <button class="btn btn-gold" onclick="saveHomepageSections()">Save Order</button>`;
+      <button class="btn btn-gold" onclick="saveHomepageSections()">Save Order</button>
+      <div class="card" style="margin-top:24px;padding:16px;max-width:720px"><h3>Homepage trust figures</h3><p class="card-meta">Choose Manual to enter a value, or Automatic to use current platform facts. Automatic values are calculated from verified profiles, completed product orders and reviews whenever you refresh them here.</p>${Object.entries(metricDefaults).map(([key, fallback]) => { const metric = metrics[key] || { value: fallback, mode: 'manual' }; return `<div class="grid grid-2" style="margin-top:10px"><label>${key.replaceAll('_',' ')}<input class="form-input metric-value" data-key="${key}" value="${metric.value || fallback}"></label><label>Source<select class="form-select metric-mode" data-key="${key}"><option value="manual" ${metric.mode !== 'automatic' ? 'selected' : ''}>Manual</option><option value="automatic" ${metric.mode === 'automatic' ? 'selected' : ''}>Automatic facts</option></select></label></div>`; }).join('')}<button class="btn btn-outline btn-sm" style="margin-top:12px" onclick="refreshHomepageMetricFacts()">Load automatic facts</button><button class="btn btn-gold btn-sm" style="margin:12px 0 0 8px" onclick="saveHomepageMetrics()">Save trust figures</button></div>`;
     const list = document.getElementById('hpSectionList');
     list.innerHTML = saved.map(({ key, visible }) => `
       <div class="card hp-section-row" draggable="true" data-key="${key}" style="padding:12px 16px;cursor:grab;display:flex;align-items:center;gap:12px">
         <span style="opacity:0.5">☰</span>
         <label style="display:flex;align-items:center;gap:8px;flex:1;margin:0"><input type="checkbox" class="hp-visible" ${visible !== false ? 'checked' : ''}> ${HOMEPAGE_SECTION_LABELS[key] || key}</label>
       </div>`).join('');
-
     let dragEl = null;
     list.querySelectorAll('.hp-section-row').forEach(row => {
       row.addEventListener('dragstart', () => { dragEl = row; row.style.opacity = '0.4'; });
@@ -908,7 +886,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       Toast.show('Homepage layout saved');
     } catch (e) { Toast.show(e.message); }
   };
-
+  window.refreshHomepageMetricFacts = async () => { try { const facts = await API.get('/admin/homepage-metric-facts'); Object.entries(facts).forEach(([key, value]) => { const input = document.querySelector(`.metric-value[data-key="${key}"]`); const mode = document.querySelector(`.metric-mode[data-key="${key}"]`); if (input && mode?.value === 'automatic') input.value = value; }); Toast.show('Current platform facts loaded'); } catch(e) { Toast.show(e.message); } };
+  window.saveHomepageMetrics = async () => { const homepage_metrics = {}; document.querySelectorAll('.metric-value').forEach(input => { const key = input.dataset.key; homepage_metrics[key] = { value: input.value.trim(), mode: document.querySelector(`.metric-mode[data-key="${key}"]`).value }; }); try { await API.put('/admin/settings', { homepage_metrics }); Toast.show('Trust figures saved and live'); } catch(e) { Toast.show(e.message); } };
   // API Keys — read-only status. Real values live in .env, never the database.
   const API_KEY_INFO = [
     { id: 'openai', label: 'OpenAI', url: 'https://platform.openai.com/api-keys', note: 'Powers CV screening, fraud-check, price suggestions upgrades' },
@@ -940,7 +919,6 @@ document.addEventListener('DOMContentLoaded', async () => {
         }).join('')}</tbody>
       </table>`;
   }
-
   // Email Templates
   async function loadEmailTemplates() {
     const templates = await API.get('/admin/email-templates');
@@ -966,7 +944,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       Toast.show('Template saved');
     } catch (e) { Toast.show(e.message); }
   };
-
   // Testimonials moderation
   async function loadTestimonials() {
     const rows = await API.get('/admin/testimonials');
@@ -987,7 +964,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   window.setTestimonialStatus = async (id, status) => { await API.put(`/admin/testimonials/${id}`, { status }); Toast.show(`Testimonial ${status}`); load('testimonials'); };
   window.deleteTestimonial = async (id) => { await API.del(`/admin/testimonials/${id}`); Toast.show('Deleted'); load('testimonials'); };
-
+  window.deleteTestimonial = async (id) => { if (!confirm('Delete this testimonial?')) return; await API.del(`/admin/testimonials/${id}`); Toast.show('Deleted'); load('testimonials'); };
   // Featured Items
   async function loadFeatured() {
     const rows = await API.get('/admin/featured');
@@ -1052,7 +1029,7 @@ document.addEventListener('DOMContentLoaded', async () => {
     } catch (e) { Toast.show(e.message); }
   };
   window.pauseFeatured = async (id) => { await API.del(`/admin/featured/${id}`); Toast.show('Paused'); load('featured'); };
-
+  window.pauseFeatured = async (id) => { if (!confirm('Remove this featured item?')) return; await API.del(`/admin/featured/${id}`); Toast.show('Paused'); load('featured'); };
   // Comments & Suggestions
   async function loadComments() {
     const rows = await API.get('/admin/comments');
@@ -1073,7 +1050,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
   window.setCommentStatus = async (id, status) => { await API.put(`/admin/comments/${id}`, { status }); Toast.show('Updated'); load('comments'); };
   window.deleteComment = async id => { if (!confirm('Delete this comment?')) return; try { await API.del(`/admin/comments/${id}`); Toast.show('Comment deleted'); load('comments'); } catch(e) { Toast.show(e.message); } };
-
   // Support Tickets
   async function loadSupportTickets() {
     const tickets = await API.get('/admin/support/tickets');
@@ -1118,14 +1094,12 @@ document.addEventListener('DOMContentLoaded', async () => {
       catch (err) { Toast.show(err.message); }
     });
   };
-
   async function loadExport() {
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Google Sheets Export</h1>
       <p class="section-sub">Export transaction data (placeholder — wire to Google Sheets API in production).</p>
       <div style="display:flex;gap:12px;margin:24px 0"><button class="btn btn-gold" onclick="exportSheet('processing')">Export Processing Jobs</button><button class="btn btn-gold" onclick="exportSheet('completed')">Export Completed Jobs</button></div>
       <div id="exportResult"></div>
-
       <h2 style="font-size:1.4rem;margin:32px 0 12px">Backup & Recovery</h2>
       <p class="section-sub" id="backupStatusLine">Checking automated backup status...</p>
       <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:16px">
@@ -1133,21 +1107,17 @@ document.addEventListener('DOMContentLoaded', async () => {
         <button class="btn btn-outline" onclick="runBackupNow()">Run Backup Now</button>
       </div>
       <div id="backupResult" style="margin-bottom:16px"></div>
-
       <h3 style="font-size:1.05rem;margin-bottom:8px">Recent Automated Backups</h3>
       <div id="autoBackupList" style="margin-bottom:24px;color:var(--text-muted);font-size:0.9rem">Loading...</div>
-
       <h3 style="font-size:1.05rem;margin-bottom:8px">Restore from Backup</h3>
       <p style="color:var(--text-muted);font-size:0.85rem;margin-bottom:8px">Merges the backup's rows back in — this never deletes anything currently live, it only adds/updates rows by matching ID. Safe to use even if you're not sure exactly what changed.</p>
       <input type="file" id="restoreFileInput" accept="application/json">
       <button class="btn btn-gold btn-sm" style="margin-top:8px" onclick="restoreBackup()">Restore</button>
       <div id="restoreResult" style="margin-top:12px;font-size:0.85rem"></div>`;
-
     const status = await API.get('/admin/backup/status').catch(() => ({ automatedEnabled: false }));
     document.getElementById('backupStatusLine').textContent = status.automatedEnabled
       ? 'Automated daily backups are ON (SUPABASE_SERVICE_ROLE_KEY is configured).'
       : 'Automated daily backups are OFF — set SUPABASE_SERVICE_ROLE_KEY to enable them. Manual download and restore below still work either way.';
-
     const list = await API.get('/admin/backup/list').catch(() => []);
     document.getElementById('autoBackupList').innerHTML = list.length
       ? list.map(f => `<div>${f.name} — ${new Date(f.created_at || f.updated_at).toLocaleString()}</div>`).join('')
@@ -1192,14 +1162,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     document.getElementById('exportResult').innerHTML = `<div class="card"><div class="card-body"><strong>${r.sheet}</strong> — ${r.rows.length} rows<br><span style="font-size:0.85rem;color:var(--text-muted)">Exported at ${new Date(r.exportedAt).toLocaleString('en-NG', { timeZone: 'Africa/Lagos' })} (WAT)</span></div></div>`;
     Toast.show(`${r.rows.length} rows ready for Sheets`);
   };
-
   async function loadFraud() {
     const flags = await API.get('/admin/fraud-flags');
     const unresolved = flags.filter(f => !f.resolved);
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Fraud Monitoring</h1>
       <p class="section-sub">Real signals from payment proofs, KYC name mismatches, and repeated login failures — not a demo.</p>
-
       <h3 style="margin-top:20px">Unresolved (${unresolved.length})</h3>
       <div id="fraudFlagList" style="margin-top:10px">
         ${unresolved.length ? unresolved.map(f => `<div class="card" style="margin-bottom:10px"><div class="card-body">
@@ -1217,7 +1185,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           <pre style="margin-top:8px;font-size:0.8rem;color:var(--text-muted);white-space:pre-wrap">${JSON.stringify(f.details, null, 2)}</pre>
         </div></div>`).join('') : '<p style="color:var(--text-muted)">No open fraud flags.</p>'}
       </div>
-
       <div class="card" style="margin-top:24px"><div class="card-body">
         <h3>Manual check</h3>
         <p style="color:var(--text-muted);font-size:0.85rem">Run an ad-hoc check against arbitrary data (doesn't create a flag).</p>
@@ -1231,14 +1198,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     const r = await API.post('/ai/fraud-check', { type: document.getElementById('fraudType').value, data: {} });
     document.getElementById('fraudResult').innerHTML = `<span class="badge ${r.risk === 'high' ? 'badge-kyc' : r.risk === 'medium' ? 'badge-gold' : 'badge-verified'}">${r.risk} risk</span> ${r.flags?.join(', ') || ''}`;
   };
-
   async function loadSettings() {
     const s = await API.get('/admin/settings');
     const plans = await API.get('/admin/plans').catch(() => []);
     document.getElementById('adminMain').innerHTML = `
       <h1 class="section-title">Platform Settings</h1>
       <div class="grid grid-2" style="margin-top:24px;gap:24px">
-
         <div class="card"><div class="card-body">
           <h3>General</h3>
           <div class="form-group"><label class="form-label">Site name</label><input class="form-input" value="${s?.site_name || 'SkillBridge'}" id="setSiteName"></div>
@@ -1254,7 +1219,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           <label style="display:flex;align-items:center;gap:8px;margin-top:8px"><input type="checkbox" id="setGuest" ${s?.guest_browsing_enabled !== false ? 'checked' : ''}> Guest browsing enabled</label>
           <button class="btn btn-gold" style="margin-top:16px" onclick="saveGeneral()">Save General</button>
         </div></div>
-
         <div class="card"><div class="card-body">
           <h3>Commissions & Escrow</h3>
           <div class="form-group"><label class="form-label">Freelancer commission (%)</label><input class="form-input" type="number" step="0.1" value="${s?.commission_freelancer ?? 10}" id="setCommFree"></div>
@@ -1266,7 +1230,6 @@ document.addEventListener('DOMContentLoaded', async () => {
           <button class="btn btn-gold" style="margin-top:16px" onclick="saveCommissions()">Save Commissions</button>
         </div></div>
       </div>
-
       <div class="card" style="margin-top:24px"><div class="card-body">
         <div style="display:flex;justify-content:space-between;align-items:center"><h3>Subscription Plans</h3><button class="btn btn-outline btn-sm" onclick="showAddPlan()">+ Add Plan</button></div>
         <div id="planForm" style="display:none;margin:16px 0;padding:16px;background:var(--bg);border-radius:var(--radius)">
@@ -1375,7 +1338,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     Toast.show('Plan deleted');
     loadSettings();
   };
-
   // Reusable reason-prompt modal — used by every reject/suspend/pause/discontinue action
   window.promptReason = (title, onConfirm) => {
     const existing = document.getElementById('reasonModalOverlay');
@@ -1402,7 +1364,6 @@ document.addEventListener('DOMContentLoaded', async () => {
       onConfirm(reason);
     });
   };
-
   const BUILDER_FEATURES = [['homepage','Homepage'],['hire','Hire marketplace'],['shop','Shop marketplace'],['jobs','Jobs'],['recruitment','Recruitment'],['chat','Chat'],['payments','Payments'],['agreements','Agreements'],['blog','Blog'],['support','Support'],['profile_edit','Profile editing']];
   async function loadBuilder() {
     const [features, roles] = await Promise.all([API.get('/admin/builder/features'), API.get('/admin/builder/roles')]);
@@ -1422,6 +1383,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   async function loadAgreements() {
     const [rows, archives] = await Promise.all([API.get('/agreements/admin'), API.get('/agreements/admin/archives')]);
     document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Agreement Management</h1><p class="section-sub">Review submitted agreements, track acceptance, completion, and monthly archive records.</p><div class="card" style="margin-top:20px"><div class="card-body">${rows.length ? rows.map(a => `<div style="padding:14px 0;border-bottom:1px solid var(--border)"><div style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap"><div><strong>${a.title}</strong><br><span style="font-size:.85rem;color:var(--text-muted)">${a.agreement_number} · ${a.status.replaceAll('_',' ')} · ${fmtPrice(a.price)}</span><p style="font-size:.85rem;color:var(--text-soft)">${a.admin_notes || ''}</p></div><div style="display:flex;gap:6px;align-items:start;flex-wrap:wrap"><button class="btn btn-outline btn-sm" onclick="downloadAdminAgreementPdf('${a.id}','${a.agreement_number}')">PDF</button>${['submitted','under_review'].includes(a.status) ? `<button class="btn btn-gold btn-sm" onclick="reviewAgreement('${a.id}','approve')">Approve & send</button><button class="btn btn-outline btn-sm" onclick="reviewAgreement('${a.id}','request_changes')">Request changes</button><button class="btn btn-outline btn-sm" onclick="reviewAgreement('${a.id}','reject')">Reject</button>` : ''}</div></div></div>`).join('') : '<p style="color:var(--text-muted)">No agreements waiting for review.</p>'}</div></div><div class="card" style="margin-top:20px"><div class="card-body"><h3>Monthly archives</h3><div class="form-row"><input class="form-input" type="month" id="archiveMonth"><button class="btn btn-outline" onclick="createAgreementArchive()">Create / refresh archive record</button><button class="btn btn-gold" onclick="downloadAgreementArchive()">Download ZIP</button></div>${archives.map(a => `<p>${a.archive_month}: ${a.agreement_count} completed agreements — ${new Date(a.created_at).toLocaleString()}</p>`).join('') || '<p style="color:var(--text-muted)">No archive records yet.</p>'}</div></div>`;
+    document.getElementById('adminMain').innerHTML = `<h1 class="section-title">Agreement Management</h1><p class="section-sub">Mutually accepted chat agreements are available here for oversight. Expand any record to read it without leaving this page.</p><div class="card" style="margin-top:20px"><div class="card-body">${rows.length ? rows.map(a => `<details style="padding:14px 0;border-bottom:1px solid var(--border)"><summary style="cursor:pointer"><strong>${a.title}</strong> <span style="font-size:.85rem;color:var(--text-muted)">— ${a.agreement_number} · ${a.status.replaceAll('_',' ')} · ${fmtPrice(a.price)}</span></summary><div style="padding-top:12px"><p style="white-space:pre-wrap">${a.details?.scope || ''}\n\n${a.details?.terms || ''}</p><p class="card-meta">${(a.agreement_parties || []).map(p => `${p.party_name}: ${p.accepted_at ? 'accepted' : 'pending'}`).join(' · ')}</p><button class="btn btn-outline btn-sm" onclick="downloadAdminAgreementPdf('${a.id}','${a.agreement_number}')">Download PDF</button></div></details>`).join('') : '<p style="color:var(--text-muted)">No mutually accepted agreements yet.</p>'}</div></div><div class="card" style="margin-top:20px"><div class="card-body"><h3>Monthly archives</h3><div class="form-row"><input class="form-input" type="month" id="archiveMonth"><button class="btn btn-outline" onclick="createAgreementArchive()">Create / refresh archive record</button><button class="btn btn-gold" onclick="downloadAgreementArchive()">Download ZIP</button></div>${archives.map(a => `<p>${a.archive_month}: ${a.agreement_count} completed agreements — ${new Date(a.created_at).toLocaleString()}</p>`).join('') || '<p style="color:var(--text-muted)">No archive records yet.</p>'}</div></div>`;
   }
   window.reviewAgreement = async (id, action) => { const note = prompt(action === 'approve' ? 'Optional administrator note:' : 'Reason / requested changes:') || ''; try { await API.put(`/agreements/${id}/review`, { action, note }); Toast.show('Agreement updated'); load('agreements'); } catch(e) { Toast.show(e.message); } };
   window.createAgreementArchive = async () => { const m = document.getElementById('archiveMonth').value; if (!m) return Toast.show('Choose a month'); try { const result = await API.post(`/agreements/admin/archives/${m}`, {}); Toast.show(`Archive record saved (${result.agreements.length} agreements)`); load('agreements'); } catch(e) { Toast.show(e.message); } };
